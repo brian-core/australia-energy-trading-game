@@ -35,7 +35,7 @@ async function fetchJson(url: string, revalidate: number): Promise<unknown> {
   return res.json();
 }
 
-async function fetchJsonWithHostFallback(path: string, revalidate: number): Promise<unknown> {
+export async function fetchJsonWithHostFallback(path: string, revalidate: number): Promise<unknown> {
   let lastError: unknown;
   for (const host of OE_DATA_HOSTS) {
     try {

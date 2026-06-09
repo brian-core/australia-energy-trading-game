@@ -12,8 +12,11 @@ import {
   type Trade,
   type TradeKind,
 } from "@/lib/energy/desk";
+import { runBacktest } from "@/lib/energy/backtest";
+import type { HistoryPayload, HistoryWindow } from "@/lib/energy/history";
 import { priceColor } from "@/lib/energy/pricing";
 import type { LivePayload } from "@/lib/energy/types";
+import PriceChart from "./price-chart";
 
 const STORAGE_KEY = "au-energy-desk-v1";
 
@@ -87,6 +90,38 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
   // Trade ticket
   const [ticket, setTicket] = useState<{ region: string; kind: TradeKind; mw: number; strike: number; premium: number }>(
     { region: "NSW1", kind: "swap", mw: 5, strike: 80, premium: 12 },
+  );
+
+  // Backtest over historic prices
+  const [btWindow, setBtWindow] = useState<HistoryWindow>("7d");
+  const [histories, setHistories] = useState<Partial<Record<HistoryWindow, HistoryPayload>>>({});
+  const [historyError, setHistoryError] = useState(false);
+
+  useEffect(() => {
+    if (histories[btWindow]) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/energy/history?window=${btWindow}`);
+        if (!res.ok) throw new Error(String(res.status));
+        const payload = (await res.json()) as HistoryPayload;
+        if (!cancelled) {
+          setHistories((h) => ({ ...h, [payload.window]: payload }));
+          setHistoryError(false);
+        }
+      } catch {
+        if (!cancelled) setHistoryError(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [btWindow, histories]);
+
+  const history = histories[btWindow];
+  const backtest = useMemo(
+    () => (history ? runBacktest(history, state.book, state.trades) : null),
+    [history, state.book, state.trades],
   );
 
   useEffect(() => {
@@ -349,6 +384,81 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
           </div>
         </div>
       )}
+
+      {/* Backtest */}
+      <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className="text-[10px] tracking-widest text-[var(--ink-soft)]">
+            BACKTEST — BOOK & TRADES AS-IF HELD
+          </span>
+          <div className="flex overflow-hidden rounded border" style={{ borderColor: "var(--edge)" }}>
+            {(["7d", "90d"] as const).map((w) => (
+              <button
+                key={w}
+                onClick={() => setBtWindow(w)}
+                className="px-1.5 py-0.5 text-[9px] tracking-widest uppercase"
+                style={
+                  btWindow === w
+                    ? { background: "var(--gen)", color: "#0b0d11" }
+                    : { color: "var(--ink-soft)" }
+                }
+              >
+                {w}
+              </button>
+            ))}
+          </div>
+        </div>
+        {!backtest ? (
+          <div className="text-[10px] text-[var(--ink-soft)]">
+            {historyError ? "history feed unavailable" : "loading price history…"}
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <div className="text-sm" style={{ color: backtest.marginAUD >= 0 ? "var(--gen)" : "#e2483d" }}>
+                  {money(backtest.marginAUD)}
+                </div>
+                <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">MARGIN {btWindow.toUpperCase()}</div>
+              </div>
+              <div>
+                <div className="text-sm">
+                  {backtest.marginPerMWh >= 0 ? "$" : "−$"}
+                  {Math.abs(backtest.marginPerMWh).toFixed(0)}
+                </div>
+                <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">PER MWH</div>
+              </div>
+              <div>
+                <div className="text-sm">{Math.round(backtest.underwaterShare * 100)}%</div>
+                <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">TIME UNDERWATER</div>
+              </div>
+            </div>
+            <div className="mt-2">
+              <PriceChart
+                points={backtest.curve}
+                color={backtest.marginAUD >= 0 ? "#2c8c8a" : "#e2483d"}
+                fillToZero
+              />
+            </div>
+            <div className="mt-1 space-y-0.5 text-[10px] text-[var(--ink-soft)]">
+              {backtest.regions.map((r) => (
+                <div key={r.code} className="flex justify-between">
+                  <span>
+                    {r.code.replace(/\d$/, "")} avg ${Math.round(r.avgPriceAUD)} (${Math.round(r.minPriceAUD)}…$
+                    {Math.round(r.maxPriceAUD)})
+                  </span>
+                  <span style={{ color: r.marginAUD >= 0 ? "var(--gen)" : "#e2483d" }}>{money(r.marginAUD)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-1.5 text-[9px] leading-snug text-[var(--ink-soft)]">
+              cumulative margin, {btWindow === "7d" ? "30-min" : "daily VWA"} prices
+              {btWindow === "90d" && " — daily averaging understates cap payouts in short spikes"}
+              {backtest.demo && " · SYNTHETIC HISTORY (feeds unreachable)"}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Signals */}
       <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>

@@ -2,9 +2,11 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { HistoryPayload } from "@/lib/energy/history";
 import { PRICE_BANDS, RETAIL_REF, fmtRetail, priceColor, spotAsCkwh } from "@/lib/energy/pricing";
 import DeskPanel from "./desk-panel";
 import type { MapMode } from "./energy-globe";
+import PriceChart from "./price-chart";
 import type { FacilitiesPayload, FuelSlice, LivePayload, RegionLive } from "@/lib/energy/types";
 
 type ViewTab = "power" | "price" | "desk";
@@ -138,6 +140,58 @@ function RegionCard({
   );
 }
 
+function SpotHistoryCard({
+  history,
+  regionCode,
+  onSelectRegion,
+  regions,
+}: {
+  history: HistoryPayload | null;
+  regionCode: string;
+  onSelectRegion: (code: string) => void;
+  regions: RegionLive[];
+}) {
+  const points = history?.regions[regionCode] ?? [];
+  const prices = points.map((p) => p[1]);
+  const avg = prices.length ? prices.reduce((s, v) => s + v, 0) / prices.length : 0;
+  const negShare = prices.length ? prices.filter((v) => v < 0).length / prices.length : 0;
+  return (
+    <div className="mt-3 border-t pt-3 font-[family-name:var(--f-mono)]" style={{ borderColor: "var(--edge)" }}>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-[10px] tracking-widest text-[var(--ink-soft)]">SPOT — LAST 7 DAYS</span>
+        {history?.demo && <span className="text-[9px] text-[#f2c14e]">SYNTHETIC</span>}
+      </div>
+      <div className="mb-2 flex flex-wrap gap-1">
+        {regions.map((r) => (
+          <button
+            key={r.code}
+            onClick={() => onSelectRegion(r.code)}
+            className="rounded border px-1.5 py-0.5 text-[9px] tracking-wider"
+            style={
+              r.code === regionCode
+                ? { background: "var(--gen)", color: "#0b0d11", borderColor: "var(--gen)" }
+                : { color: "var(--ink-soft)", borderColor: "var(--edge)" }
+            }
+          >
+            {r.code.replace(/\d$/, "")}
+          </button>
+        ))}
+      </div>
+      {!history ? (
+        <div className="text-[10px] text-[var(--ink-soft)]">loading price history…</div>
+      ) : (
+        <>
+          <PriceChart points={points} color={priceColor(avg)} />
+          <div className="mt-1 text-[10px] text-[var(--ink-soft)]">
+            avg ${Math.round(avg)}/MWh ({spotAsCkwh(avg).toFixed(1)}c/kWh)
+            {negShare > 0 && <> · negative {Math.round(negShare * 100)}% of intervals</>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function EnergyMap() {
   const [live, setLive] = useState<LivePayload | null>(null);
   const [facilities, setFacilities] = useState<FacilitiesPayload | null>(null);
@@ -146,6 +200,24 @@ export default function EnergyMap() {
   const [tab, setTab] = useState<ViewTab>("power");
   // The desk reads best against the price map.
   const mode: MapMode = tab === "power" ? "power" : "price";
+
+  // 7-day spot history, loaded the first time the price view opens.
+  const [history7d, setHistory7d] = useState<HistoryPayload | null>(null);
+  useEffect(() => {
+    if (tab !== "price" || history7d) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/energy/history?window=7d");
+        if (res.ok && !cancelled) setHistory7d(await res.json());
+      } catch {
+        // chart card simply stays in loading state
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, history7d]);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -284,6 +356,14 @@ export default function EnergyMap() {
                 </span>
               ))}
             </div>
+            {tab === "price" && (
+              <SpotHistoryCard
+                history={history7d}
+                regionCode={selected ?? "NSW1"}
+                onSelectRegion={setSelected}
+                regions={live.regions}
+              />
+            )}
           </>
         )}
       </div>
