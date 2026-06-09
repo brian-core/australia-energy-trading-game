@@ -3,8 +3,11 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PRICE_BANDS, RETAIL_REF, fmtRetail, priceColor, spotAsCkwh } from "@/lib/energy/pricing";
+import DeskPanel from "./desk-panel";
 import type { MapMode } from "./energy-globe";
 import type { FacilitiesPayload, FuelSlice, LivePayload, RegionLive } from "@/lib/energy/types";
+
+type ViewTab = "power" | "price" | "desk";
 
 const EnergyGlobe = dynamic(() => import("./energy-globe"), {
   ssr: false,
@@ -140,7 +143,9 @@ export default function EnergyMap() {
   const [facilities, setFacilities] = useState<FacilitiesPayload | null>(null);
   const [stale, setStale] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
-  const [mode, setMode] = useState<MapMode>("power");
+  const [tab, setTab] = useState<ViewTab>("power");
+  // The desk reads best against the price map.
+  const mode: MapMode = tab === "power" ? "power" : "price";
   const [size, setSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -201,9 +206,9 @@ export default function EnergyMap() {
         />
       )}
 
-      {/* Top-left: title + national stats */}
+      {/* Top-left: title + national stats / trading desk */}
       <div
-        className="absolute left-4 top-4 w-[300px] max-w-[calc(100vw-2rem)] rounded-xl border p-4 backdrop-blur"
+        className="absolute left-4 top-4 w-[300px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border p-4 backdrop-blur hud-scroll max-md:max-h-[55vh] md:max-h-[calc(100vh-2rem)] md:w-[330px]"
         style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
       >
         <div className="flex items-start justify-between gap-2">
@@ -212,13 +217,13 @@ export default function EnergyMap() {
             className="flex overflow-hidden rounded-md border font-[family-name:var(--f-mono)] text-[10px] tracking-widest"
             style={{ borderColor: "var(--edge)" }}
           >
-            {(["power", "price"] as const).map((m) => (
+            {(["power", "price", "desk"] as const).map((m) => (
               <button
                 key={m}
-                onClick={() => setMode(m)}
+                onClick={() => setTab(m)}
                 className="px-2 py-1 uppercase"
                 style={
-                  mode === m
+                  tab === m
                     ? { background: "var(--gen)", color: "#0b0d11" }
                     : { color: "var(--ink-soft)" }
                 }
@@ -231,7 +236,12 @@ export default function EnergyMap() {
         <div className="mt-1">
           <StatusChip live={live} stale={stale} />
         </div>
-        {live && (
+        {live && tab === "desk" && (
+          <div className="mt-3">
+            <DeskPanel live={live} />
+          </div>
+        )}
+        {live && tab !== "desk" && (
           <>
             <div className="mt-3 grid grid-cols-3 gap-2 font-[family-name:var(--f-mono)]">
               <div>
@@ -299,7 +309,8 @@ export default function EnergyMap() {
         )}
       </div>
 
-      {/* Bottom-left: map key + attribution */}
+      {/* Bottom-left: map key + attribution (hidden while the desk uses the column) */}
+      {tab !== "desk" && (
       <div
         className="absolute bottom-4 left-4 rounded-xl border p-3 font-[family-name:var(--f-mono)] text-[10px] text-[var(--ink-soft)] backdrop-blur max-md:hidden"
         style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
@@ -335,6 +346,7 @@ export default function EnergyMap() {
           {facilities?.demo && <> · station list: built-in sample</>}
         </div>
       </div>
+      )}
     </div>
   );
 }
