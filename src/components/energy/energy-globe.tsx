@@ -84,6 +84,7 @@ export default function EnergyGlobe({
   selectedRegion,
   onSelectRegion,
   mode,
+  scenarioSite,
   width,
   height,
 }: {
@@ -93,6 +94,7 @@ export default function EnergyGlobe({
   selectedRegion: string | null;
   onSelectRegion: (code: string | null) => void;
   mode: MapMode;
+  scenarioSite?: { lat: number; lng: number; label: string } | null;
   width: number;
   height: number;
 }) {
@@ -242,6 +244,13 @@ export default function EnergyGlobe({
         const flow = a as InterconnectorFlow;
         return `<div style="font-family:var(--f-mono,monospace);font-size:11px;background:#11141aee;border:1px solid #ffffff26;border-radius:6px;padding:6px 9px;color:#ecebe4"><b>${flow.label}</b><br/>${flow.from.replace(/\d$/, "")} → ${flow.to.replace(/\d$/, "")} · ${fmtMW(flow.mw)}</div>`;
       }}
+      ringsData={scenarioSite ? [scenarioSite] : []}
+      ringLat="lat"
+      ringLng="lng"
+      ringColor={() => (t: number) => `rgba(242,193,78,${Math.max(1 - t, 0)})`}
+      ringMaxRadius={3.5}
+      ringPropagationSpeed={1.6}
+      ringRepeatPeriod={900}
       labelsData={labels}
       labelLat="lat"
       labelLng="lng"

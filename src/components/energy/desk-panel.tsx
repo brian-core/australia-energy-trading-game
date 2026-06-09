@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEFAULT_BOOK,
+
   STRESS_SPOT_AUD,
   computePositions,
   evaluateAlerts,
@@ -18,27 +18,7 @@ import { priceColor } from "@/lib/energy/pricing";
 import type { LivePayload } from "@/lib/energy/types";
 import PriceChart from "./price-chart";
 
-const STORAGE_KEY = "au-energy-desk-v1";
-
-interface DeskState {
-  book: Book;
-  trades: Trade[];
-}
-
-function loadState(): DeskState {
-  if (typeof window === "undefined") return { book: DEFAULT_BOOK, trades: [] };
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { book: DEFAULT_BOOK, trades: [] };
-    const parsed = JSON.parse(raw) as Partial<DeskState>;
-    return {
-      book: { ...DEFAULT_BOOK, ...parsed.book, loadsMW: { ...DEFAULT_BOOK.loadsMW, ...parsed.book?.loadsMW } },
-      trades: Array.isArray(parsed.trades) ? parsed.trades : [],
-    };
-  } catch {
-    return { book: DEFAULT_BOOK, trades: [] };
-  }
-}
+import { DESK_STORAGE_KEY, loadDeskState, type DeskState } from "@/lib/energy/desk-storage";
 
 function money(x: number): string {
   const sign = x < 0 ? "−" : "";
@@ -82,7 +62,7 @@ function NumberField({
 }
 
 export default function DeskPanel({ live }: { live: LivePayload }) {
-  const [state, setState] = useState<DeskState>(loadState);
+  const [state, setState] = useState<DeskState>(loadDeskState);
   const [alerts, setAlerts] = useState<DeskAlert[]>([]);
   const [notify, setNotify] = useState(false);
   const seenAlertKeys = useRef<Set<string>>(new Set());
@@ -126,7 +106,7 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      window.localStorage.setItem(DESK_STORAGE_KEY, JSON.stringify(state));
     } catch {
       // storage full/blocked — simulation continues in memory
     }

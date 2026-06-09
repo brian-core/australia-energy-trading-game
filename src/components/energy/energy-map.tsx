@@ -4,12 +4,13 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HistoryPayload } from "@/lib/energy/history";
 import { PRICE_BANDS, RETAIL_REF, fmtRetail, priceColor, spotAsCkwh } from "@/lib/energy/pricing";
+import BuildPanel, { type ScenarioSite } from "./build-panel";
 import DeskPanel from "./desk-panel";
 import type { MapMode } from "./energy-globe";
 import PriceChart from "./price-chart";
 import type { FacilitiesPayload, FuelSlice, LivePayload, RegionLive } from "@/lib/energy/types";
 
-type ViewTab = "power" | "price" | "desk";
+type ViewTab = "power" | "price" | "desk" | "build";
 
 const EnergyGlobe = dynamic(() => import("./energy-globe"), {
   ssr: false,
@@ -201,10 +202,12 @@ export default function EnergyMap() {
   // The desk reads best against the price map.
   const mode: MapMode = tab === "power" ? "power" : "price";
 
-  // 7-day spot history, loaded the first time the price view opens.
+  const [scenarioSite, setScenarioSite] = useState<ScenarioSite | null>(null);
+
+  // 7-day spot history, loaded the first time the price or build view opens.
   const [history7d, setHistory7d] = useState<HistoryPayload | null>(null);
   useEffect(() => {
-    if (tab !== "price" || history7d) return;
+    if ((tab !== "price" && tab !== "build") || history7d) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -273,6 +276,7 @@ export default function EnergyMap() {
           selectedRegion={selected}
           onSelectRegion={setSelected}
           mode={mode}
+          scenarioSite={tab === "build" ? scenarioSite : null}
           width={size.width}
           height={size.height}
         />
@@ -289,7 +293,7 @@ export default function EnergyMap() {
             className="flex overflow-hidden rounded-md border font-[family-name:var(--f-mono)] text-[10px] tracking-widest"
             style={{ borderColor: "var(--edge)" }}
           >
-            {(["power", "price", "desk"] as const).map((m) => (
+            {(["power", "price", "desk", "build"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setTab(m)}
@@ -313,7 +317,12 @@ export default function EnergyMap() {
             <DeskPanel live={live} />
           </div>
         )}
-        {live && tab !== "desk" && (
+        {live && tab === "build" && (
+          <div className="mt-3">
+            <BuildPanel live={live} history={history7d} onScenarioSite={setScenarioSite} />
+          </div>
+        )}
+        {live && tab !== "desk" && tab !== "build" && (
           <>
             <div className="mt-3 grid grid-cols-3 gap-2 font-[family-name:var(--f-mono)]">
               <div>
@@ -389,8 +398,8 @@ export default function EnergyMap() {
         )}
       </div>
 
-      {/* Bottom-left: map key + attribution (hidden while the desk uses the column) */}
-      {tab !== "desk" && (
+      {/* Bottom-left: map key + attribution (hidden while desk/build use the column) */}
+      {tab !== "desk" && tab !== "build" && (
       <div
         className="absolute bottom-4 left-4 rounded-xl border p-3 font-[family-name:var(--f-mono)] text-[10px] text-[var(--ink-soft)] backdrop-blur max-md:hidden"
         style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
