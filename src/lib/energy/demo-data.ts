@@ -49,7 +49,7 @@ export const DEMO_REGION_DATA: Record<
   WEM: {
     demandMW: 2950,
     netInterchangeMW: 0,
-    priceAUD: null,
+    priceAUD: 84.0,
     fuelMix: mix({ coal: 980, gas: 1180, wind: 480, solar: 220, battery: 70, bioenergy: 20 }),
   },
 };

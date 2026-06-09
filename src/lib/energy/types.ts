@@ -68,6 +68,8 @@ export interface LivePayload {
     generationMW: number;
     renewableShare: number;
     fuelMix: FuelSlice[];
+    /** Demand-weighted average spot price across regions reporting one. */
+    avgSpotAUD: number | null;
   };
 }
 

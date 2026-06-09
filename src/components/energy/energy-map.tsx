@@ -2,6 +2,8 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PRICE_BANDS, RETAIL_REF, fmtRetail, priceColor, spotAsCkwh } from "@/lib/energy/pricing";
+import type { MapMode } from "./energy-globe";
 import type { FacilitiesPayload, FuelSlice, LivePayload, RegionLive } from "@/lib/energy/types";
 
 const EnergyGlobe = dynamic(() => import("./energy-globe"), {
@@ -116,6 +118,19 @@ function RegionCard({
         {importing && <span style={{ color: "var(--load)" }}>▼ importing {fmtMW(-region.netInterchangeMW)}</span>}
         {!exporting && !importing && <span>balanced</span>}
       </div>
+      <div className="mt-1 flex items-center justify-between font-[family-name:var(--f-mono)] text-[10px] text-[var(--ink-soft)]">
+        <span>
+          merchant{" "}
+          {region.priceAUD != null ? (
+            <span style={{ color: priceColor(region.priceAUD) }}>
+              {spotAsCkwh(region.priceAUD).toFixed(1)}c
+            </span>
+          ) : (
+            "n/a"
+          )}
+        </span>
+        {RETAIL_REF[region.code] && <span>retail {fmtRetail(RETAIL_REF[region.code])}/kWh</span>}
+      </div>
     </button>
   );
 }
@@ -125,6 +140,7 @@ export default function EnergyMap() {
   const [facilities, setFacilities] = useState<FacilitiesPayload | null>(null);
   const [stale, setStale] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [mode, setMode] = useState<MapMode>("power");
   const [size, setSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -179,6 +195,7 @@ export default function EnergyMap() {
           facilities={facilities?.facilities ?? []}
           selectedRegion={selected}
           onSelectRegion={setSelected}
+          mode={mode}
           width={size.width}
           height={size.height}
         />
@@ -189,7 +206,28 @@ export default function EnergyMap() {
         className="absolute left-4 top-4 w-[300px] max-w-[calc(100vw-2rem)] rounded-xl border p-4 backdrop-blur"
         style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
       >
-        <h1 className="text-lg font-semibold leading-tight">Australia Live Grid</h1>
+        <div className="flex items-start justify-between gap-2">
+          <h1 className="text-lg font-semibold leading-tight">Australia Live Grid</h1>
+          <div
+            className="flex overflow-hidden rounded-md border font-[family-name:var(--f-mono)] text-[10px] tracking-widest"
+            style={{ borderColor: "var(--edge)" }}
+          >
+            {(["power", "price"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className="px-2 py-1 uppercase"
+                style={
+                  mode === m
+                    ? { background: "var(--gen)", color: "#0b0d11" }
+                    : { color: "var(--ink-soft)" }
+                }
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="mt-1">
           <StatusChip live={live} stale={stale} />
         </div>
@@ -213,6 +251,15 @@ export default function EnergyMap() {
                 <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">RENEWABLE</div>
               </div>
             </div>
+            {live.national.avgSpotAUD != null && (
+              <div className="mt-2 font-[family-name:var(--f-mono)] text-[10px] text-[var(--ink-soft)]">
+                avg merchant spot{" "}
+                <span style={{ color: priceColor(live.national.avgSpotAUD) }}>
+                  ${live.national.avgSpotAUD.toFixed(0)}/MWh
+                </span>{" "}
+                ({spotAsCkwh(live.national.avgSpotAUD).toFixed(1)}c/kWh) · demand-weighted
+              </div>
+            )}
             <div className="mt-3">
               <FuelBar mix={live.national.fuelMix} />
             </div>
@@ -257,16 +304,31 @@ export default function EnergyMap() {
         className="absolute bottom-4 left-4 rounded-xl border p-3 font-[family-name:var(--f-mono)] text-[10px] text-[var(--ink-soft)] backdrop-blur max-md:hidden"
         style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
       >
-        <div className="space-y-1">
-          <div>
-            <span style={{ color: "var(--gen)" }}>█</span> generation column ·{" "}
-            <span style={{ color: "var(--load)" }}>█</span> load column (height = MW)
+        {mode === "power" ? (
+          <div className="space-y-1">
+            <div>
+              <span style={{ color: "var(--gen)" }}>█</span> generation column ·{" "}
+              <span style={{ color: "var(--load)" }}>█</span> load column (height = MW)
+            </div>
+            <div>● power stations coloured by fuel, sized by capacity</div>
+            <div>
+              <span style={{ color: "#f2c14e" }}>⌒</span> interconnector flow (speed = MW)
+            </div>
           </div>
-          <div>● power stations coloured by fuel, sized by capacity</div>
-          <div>
-            <span style={{ color: "#f2c14e" }}>⌒</span> interconnector flow (speed = MW)
+        ) : (
+          <div className="space-y-1">
+            <div>█ column height = wholesale spot price ($/MWh)</div>
+            <div className="flex flex-wrap gap-x-2">
+              {PRICE_BANDS.map((band) => (
+                <span key={band.label} className="inline-flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-sm" style={{ background: band.color }} />
+                  {band.label}
+                </span>
+              ))}
+            </div>
+            <div>retail = FY25–26 reference offers (DMO / VDO / regulated), incl GST</div>
           </div>
-        </div>
+        )}
         <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--edge)" }}>
           data: AEMO + OpenElectricity (OpenNEM) · 5-min dispatch
           {updated && <> · updated {updated.toLocaleTimeString()}</>}

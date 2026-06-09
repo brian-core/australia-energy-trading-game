@@ -104,6 +104,8 @@ interface RegionPower {
   fuelMix: FuelSlice[];
   generationMW: number;
   demandMW: number | null;
+  /** Spot/balancing price series when present (WEM publishes one here). */
+  priceAUD: number | null;
   asOf: string | null;
 }
 
@@ -116,6 +118,7 @@ async function fetchRegionPower(network: "NEM" | "WEM", region?: string): Promis
 
   const byGroup = new Map<FuelGroup, number>();
   let demandMW: number | null = null;
+  let priceAUD: number | null = null;
   let asOf: string | null = null;
 
   for (const series of json.data) {
@@ -125,6 +128,11 @@ async function fetchRegionPower(network: "NEM" | "WEM", region?: string): Promis
     if (series.type === "demand" || series.id?.endsWith(".demand")) {
       const v = lastValue(series);
       if (v != null) demandMW = v;
+      continue;
+    }
+    if (series.type === "price" || series.id?.endsWith(".price")) {
+      const v = lastValue(series);
+      if (v != null) priceAUD = v;
       continue;
     }
     if (series.type !== "power" || !series.fuel_tech) continue;
@@ -145,7 +153,7 @@ async function fetchRegionPower(network: "NEM" | "WEM", region?: string): Promis
     }));
   const generationMW = fuelMix.reduce((sum, s) => sum + s.mw, 0);
   if (fuelMix.length === 0) throw new Error(`no generation series for ${path}`);
-  return { fuelMix, generationMW, demandMW, asOf };
+  return { fuelMix, generationMW, demandMW, priceAUD, asOf };
 }
 
 // ---------------------------------------------------------------------------
@@ -243,7 +251,9 @@ export async function buildLivePayload(): Promise<LivePayload> {
       demandMW: Math.round(demandMW),
       generationMW: Math.round(generationMW),
       netInterchangeMW: Math.round(aemoRow?.netInterchangeMW ?? fallback.netInterchangeMW),
-      priceAUD: aemoRow?.priceAUD ?? (aemo ? null : fallback.priceAUD),
+      // AEMO dispatch price for NEM regions; OpenElectricity balancing price
+      // covers WEM. Demo price only when both feeds are down.
+      priceAUD: aemoRow?.priceAUD ?? power?.priceAUD ?? (demo ? fallback.priceAUD : null),
       fuelMix,
       renewableShare: renewableShare(fuelMix),
       asOf: power?.asOf ?? aemoRow?.asOf ?? null,
@@ -266,6 +276,13 @@ export async function buildLivePayload(): Promise<LivePayload> {
       color: FUEL_META[tech].color,
     }));
 
+  const priced = regions.filter((r) => r.priceAUD != null);
+  const pricedDemand = priced.reduce((sum, r) => sum + r.demandMW, 0);
+  const avgSpotAUD =
+    pricedDemand > 0
+      ? priced.reduce((sum, r) => sum + (r.priceAUD as number) * r.demandMW, 0) / pricedDemand
+      : null;
+
   return {
     updatedAt: new Date().toISOString(),
     demo,
@@ -281,6 +298,7 @@ export async function buildLivePayload(): Promise<LivePayload> {
       generationMW: regions.reduce((sum, r) => sum + r.generationMW, 0),
       renewableShare: renewableShare(fuelMix),
       fuelMix,
+      avgSpotAUD,
     },
   };
 }

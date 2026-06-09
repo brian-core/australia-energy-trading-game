@@ -7,7 +7,10 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
 import { FUEL_META } from "@/lib/energy/regions";
+import { RETAIL_REF, fmtRetail, priceColor, spotAsCkwh } from "@/lib/energy/pricing";
 import type { Facility, InterconnectorFlow, RegionLive } from "@/lib/energy/types";
+
+export type MapMode = "power" | "price";
 
 const GEN_COLOR = "#2c8c8a"; // generation columns (teal)
 const LOAD_COLOR = "#d97a86"; // demand columns (pink)
@@ -17,7 +20,7 @@ const ARC_COLOR_BRIGHT = "rgba(242, 193, 78, 0.95)";
 // Columns and facility dots share globe.gl's single points layer, so every
 // styling accessor switches on `kind`.
 type MapPoint =
-  | (Facility & { kind: "facility" })
+  | (Facility & { kind: "facility"; spotAUD: number | null })
   | {
       kind: "column";
       metric: "generation" | "load";
@@ -25,6 +28,12 @@ type MapPoint =
       lat: number;
       lng: number;
       mw: number;
+    }
+  | {
+      kind: "pricecol";
+      region: RegionLive;
+      lat: number;
+      lng: number;
     };
 
 function fmtMW(mw: number): string {
@@ -39,7 +48,23 @@ function tooltipHtml(point: MapPoint): string {
     return box(
       `<b>${point.name}</b><br/>` +
         `<span style="color:${meta.color}">●</span> ${meta.label} · ${fmtMW(point.capacityMW)} capacity` +
+        (point.spotAUD != null
+          ? `<br/>merchant spot <span style="color:${priceColor(point.spotAUD)}">$${point.spotAUD.toFixed(0)}/MWh</span>`
+          : "") +
         (point.region ? `<br/><span style="opacity:.6">${point.region}</span>` : ""),
+    );
+  }
+  if (point.kind === "pricecol") {
+    const r = point.region;
+    const retail = RETAIL_REF[r.code];
+    return box(
+      `<b>${r.name}</b><br/>` +
+        (r.priceAUD != null
+          ? `spot <span style="color:${priceColor(r.priceAUD)}">$${r.priceAUD.toFixed(0)}/MWh</span> (${spotAsCkwh(r.priceAUD).toFixed(1)}c/kWh)<br/>`
+          : `spot n/a<br/>`) +
+        (retail
+          ? `retail ref ${fmtRetail(retail)}/kWh (${retail.scheme})<br/><span style="opacity:.6">${retail.networks.join(", ")}</span>`
+          : ""),
     );
   }
   const r = point.region;
@@ -58,6 +83,7 @@ export default function EnergyGlobe({
   facilities,
   selectedRegion,
   onSelectRegion,
+  mode,
   width,
   height,
 }: {
@@ -66,33 +92,47 @@ export default function EnergyGlobe({
   facilities: Facility[];
   selectedRegion: string | null;
   onSelectRegion: (code: string | null) => void;
+  mode: MapMode;
   width: number;
   height: number;
 }) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
 
   const points = useMemo<MapPoint[]>(() => {
-    const columns: MapPoint[] = regions.flatMap((region) => [
-      {
-        kind: "column",
-        metric: "generation",
-        region,
-        lat: region.lat,
-        lng: region.lng - 1.1,
-        mw: region.generationMW,
-      },
-      {
-        kind: "column",
-        metric: "load",
-        region,
-        lat: region.lat,
-        lng: region.lng + 1.1,
-        mw: region.demandMW,
-      },
-    ]);
-    const dots: MapPoint[] = facilities.map((f) => ({ ...f, kind: "facility" }));
+    const priceByRegion = new Map(regions.map((r) => [r.code, r.priceAUD]));
+    const columns: MapPoint[] =
+      mode === "price"
+        ? regions.map((region) => ({
+            kind: "pricecol",
+            region,
+            lat: region.lat,
+            lng: region.lng,
+          }))
+        : regions.flatMap((region): MapPoint[] => [
+            {
+              kind: "column",
+              metric: "generation",
+              region,
+              lat: region.lat,
+              lng: region.lng - 1.1,
+              mw: region.generationMW,
+            },
+            {
+              kind: "column",
+              metric: "load",
+              region,
+              lat: region.lat,
+              lng: region.lng + 1.1,
+              mw: region.demandMW,
+            },
+          ]);
+    const dots: MapPoint[] = facilities.map((f) => ({
+      ...f,
+      kind: "facility",
+      spotAUD: priceByRegion.get(f.region) ?? null,
+    }));
     return [...dots, ...columns];
-  }, [regions, facilities]);
+  }, [regions, facilities, mode]);
 
   const labels = useMemo(
     () =>
@@ -161,23 +201,31 @@ export default function EnergyGlobe({
       pointColor={(p) => {
         const point = p as MapPoint;
         if (point.kind === "facility") return FUEL_META[point.fuel].color;
+        if (point.kind === "pricecol") return priceColor(point.region.priceAUD);
         return point.metric === "generation" ? GEN_COLOR : LOAD_COLOR;
       }}
       pointAltitude={(p) => {
         const point = p as MapPoint;
         if (point.kind === "facility") return 0.008;
+        if (point.kind === "pricecol") {
+          const price = point.region.priceAUD;
+          // Negative or missing prices get a stub column; colour carries the signal.
+          if (price == null || price <= 0) return 0.015;
+          return 0.015 + Math.min(price, 600) / 2400;
+        }
         return Math.min(0.005 + point.mw / 42000, 0.3);
       }}
       pointRadius={(p) => {
         const point = p as MapPoint;
         if (point.kind === "facility") return 0.05 + Math.sqrt(point.capacityMW) / 220;
+        if (point.kind === "pricecol") return 0.8;
         return 0.55;
       }}
       pointResolution={10}
       pointLabel={(p) => tooltipHtml(p as MapPoint)}
       onPointClick={(p) => {
         const point = p as MapPoint;
-        onSelectRegion(point.kind === "column" ? point.region.code : null);
+        onSelectRegion(point.kind === "facility" ? null : point.region.code);
       }}
       arcsData={arcs}
       arcStartLat="fromLat"

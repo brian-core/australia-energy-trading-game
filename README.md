@@ -10,6 +10,7 @@ A live 3D globe of Australia's electricity system: what's being generated (coal,
 - **Dots** — individual power stations, coloured by fuel tech and sized by registered capacity
 - **Animated arcs** — interconnector flows between NEM regions (QNI, VIC–NSW, Heywood, Basslink); dash speed scales with MW
 - **HUD** — national totals, renewable share, per-region fuel mix, spot prices, import/export status. Click a region (card, label or column) to fly to it.
+- **PRICE view** (toggle, top-left) — columns become wholesale spot price per region, coloured by AEMO-style price bands (negative → purple, >$300 → red). Tooltips and region cards compare the live **merchant** (spot) rate in c/kWh against a **retail** reference range per state — FY2025-26 DMO / Victorian Default Offer / regulated tariffs per distribution network (Ausgrid, Endeavour, Essential, Energex, Ergon, the five Victorian networks, SA Power Networks, Aurora, Synergy). Station tooltips show the spot price their region is earning. Retail has no live feed — those are annual benchmark offers, labelled as such.
 
 ## Data sources
 
