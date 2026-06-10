@@ -7,11 +7,13 @@ import { PRICE_BANDS, RETAIL_REF, fmtRetail, priceColor, spotAsCkwh } from "@/li
 import BuildPanel, { type ScenarioSite } from "./build-panel";
 import DeskPanel from "./desk-panel";
 import type { MapMode } from "./energy-globe";
+import OpsPanel from "./ops-panel";
 import PriceChart from "./price-chart";
+import { useEnergyGame } from "./use-game";
 import { FUEL_META } from "@/lib/energy/regions";
 import type { Facility, FacilitiesPayload, FuelSlice, LivePayload, RegionLive } from "@/lib/energy/types";
 
-type ViewTab = "power" | "price" | "desk" | "build";
+type ViewTab = "power" | "price" | "desk" | "build" | "ops";
 
 const EnergyGlobe = dynamic(() => import("./energy-globe"), {
   ssr: false,
@@ -281,6 +283,14 @@ export default function EnergyMap() {
 
   const [scenarioSite, setScenarioSite] = useState<ScenarioSite | null>(null);
   const [facilityDetail, setFacilityDetail] = useState<Facility | null>(null);
+  const [flyTo, setFlyTo] = useState<{ lat: number; lng: number; seq: number } | null>(null);
+  const flySeq = useRef(0);
+  const focusAsset = useCallback((lat: number, lng: number) => {
+    flySeq.current += 1;
+    setFlyTo({ lat, lng, seq: flySeq.current });
+  }, []);
+  // OPS game clock runs regardless of tab so the fleet keeps earning.
+  const game = useEnergyGame(live, true);
 
   // 7-day spot history, loaded the first time the price or build view opens.
   const [history7d, setHistory7d] = useState<HistoryPayload | null>(null);
@@ -356,6 +366,8 @@ export default function EnergyMap() {
           onSelectFacility={setFacilityDetail}
           mode={mode}
           scenarioSite={tab === "build" ? scenarioSite : null}
+          ownedAssets={game.state.fleet}
+          flyTo={flyTo}
           width={size.width}
           height={size.height}
         />
@@ -372,7 +384,7 @@ export default function EnergyMap() {
             className="flex overflow-hidden rounded-md border font-[family-name:var(--f-mono)] text-[10px] tracking-widest"
             style={{ borderColor: "var(--edge)" }}
           >
-            {(["power", "price", "desk", "build"] as const).map((m) => (
+            {(["power", "price", "desk", "build", "ops"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setTab(m)}
@@ -401,7 +413,17 @@ export default function EnergyMap() {
             <BuildPanel live={live} history={history7d} onScenarioSite={setScenarioSite} />
           </div>
         )}
-        {live && tab !== "desk" && tab !== "build" && (
+        {live && tab === "ops" && (
+          <div className="mt-3">
+            <OpsPanel
+              game={game}
+              live={live}
+              facilities={facilities?.facilities ?? []}
+              onFocusAsset={focusAsset}
+            />
+          </div>
+        )}
+        {live && tab !== "desk" && tab !== "build" && tab !== "ops" && (
           <>
             <div className="mt-3 grid grid-cols-3 gap-2 font-[family-name:var(--f-mono)]">
               <div>
@@ -486,7 +508,7 @@ export default function EnergyMap() {
       )}
 
       {/* Bottom-left: map key + attribution (hidden while desk/build use the column) */}
-      {tab !== "desk" && tab !== "build" && (
+      {tab !== "desk" && tab !== "build" && tab !== "ops" && (
       <div
         className="absolute bottom-4 left-4 rounded-xl border p-3 font-[family-name:var(--f-mono)] text-[10px] text-[var(--ink-soft)] backdrop-blur max-md:hidden"
         style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
@@ -517,7 +539,7 @@ export default function EnergyMap() {
           </div>
         )}
         <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--edge)" }}>
-          data: AEMO + OpenElectricity (OpenNEM) · 5-min dispatch
+          data: AEMO + OpenElectricity (OpenNEM) · 5-min dispatch · zoom imagery © Esri
           {updated && <> · updated {updated.toLocaleTimeString()}</>}
           {facilities?.demo && <> · station list: built-in sample</>}
         </div>
