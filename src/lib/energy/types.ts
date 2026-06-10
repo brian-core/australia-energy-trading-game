@@ -81,6 +81,10 @@ export interface Facility {
   /** Registered capacity in MW. */
   capacityMW: number;
   region: string;
+  /** Owner/operator where known (curated list only). */
+  owner?: string;
+  /** Official project/company page where known. */
+  url?: string;
 }
 
 export interface FacilitiesPayload {

@@ -8,7 +8,8 @@ import BuildPanel, { type ScenarioSite } from "./build-panel";
 import DeskPanel from "./desk-panel";
 import type { MapMode } from "./energy-globe";
 import PriceChart from "./price-chart";
-import type { FacilitiesPayload, FuelSlice, LivePayload, RegionLive } from "@/lib/energy/types";
+import { FUEL_META } from "@/lib/energy/regions";
+import type { Facility, FacilitiesPayload, FuelSlice, LivePayload, RegionLive } from "@/lib/energy/types";
 
 type ViewTab = "power" | "price" | "desk" | "build";
 
@@ -193,6 +194,82 @@ function SpotHistoryCard({
   );
 }
 
+function LinkChip({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="rounded border px-2 py-0.5 text-[10px] tracking-wider text-[var(--ink-soft)] hover:text-[var(--ink)]"
+      style={{ borderColor: "var(--edge)" }}
+    >
+      {label} ↗
+    </a>
+  );
+}
+
+function FacilityCard({
+  facility,
+  spotAUD,
+  onClose,
+}: {
+  facility: Facility;
+  spotAUD: number | null;
+  onClose: () => void;
+}) {
+  const meta = FUEL_META[facility.fuel];
+  const q = encodeURIComponent(`${facility.name} power station Australia`);
+  return (
+    <div
+      className="absolute bottom-4 left-1/2 z-10 w-[400px] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-xl border p-4 font-[family-name:var(--f-mono)] backdrop-blur"
+      style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="text-sm font-semibold">{facility.name}</div>
+          <div className="mt-0.5 text-[10px] text-[var(--ink-soft)]">
+            <span style={{ color: meta.color }}>●</span> {meta.label} ·{" "}
+            {facility.capacityMW >= 1000
+              ? `${(facility.capacityMW / 1000).toFixed(2)} GW`
+              : `${facility.capacityMW} MW`}{" "}
+            registered
+            {facility.region && <> · {facility.region.replace(/\d$/, "")}</>}
+          </div>
+        </div>
+        <button onClick={onClose} className="text-[var(--ink-soft)] hover:text-[var(--ink)]">
+          ✕
+        </button>
+      </div>
+      <div className="mt-2 space-y-1 text-[10px] text-[var(--ink-soft)]">
+        {facility.owner && (
+          <div>
+            owner/operator <span className="text-[var(--ink)]">{facility.owner}</span>
+          </div>
+        )}
+        {spotAUD != null && (
+          <div>
+            regional merchant spot{" "}
+            <span style={{ color: priceColor(spotAUD) }}>${spotAUD.toFixed(0)}/MWh</span>
+          </div>
+        )}
+        <div>
+          {facility.lat.toFixed(2)}, {facility.lng.toFixed(2)}
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {facility.url && <LinkChip href={facility.url} label="OFFICIAL SITE" />}
+        <LinkChip href={`https://www.google.com/search?q=${q}`} label="GOOGLE" />
+        <LinkChip
+          href={`https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(facility.name + " power station")}`}
+          label="WIKIPEDIA"
+        />
+        <LinkChip href={`https://www.google.com/maps?q=${facility.lat},${facility.lng}`} label="MAP" />
+        <LinkChip href="https://explore.openelectricity.org.au/facilities/nem/" label="OPENELECTRICITY" />
+      </div>
+    </div>
+  );
+}
+
 export default function EnergyMap() {
   const [live, setLive] = useState<LivePayload | null>(null);
   const [facilities, setFacilities] = useState<FacilitiesPayload | null>(null);
@@ -203,6 +280,7 @@ export default function EnergyMap() {
   const mode: MapMode = tab === "power" ? "power" : "price";
 
   const [scenarioSite, setScenarioSite] = useState<ScenarioSite | null>(null);
+  const [facilityDetail, setFacilityDetail] = useState<Facility | null>(null);
 
   // 7-day spot history, loaded the first time the price or build view opens.
   const [history7d, setHistory7d] = useState<HistoryPayload | null>(null);
@@ -275,6 +353,7 @@ export default function EnergyMap() {
           facilities={facilities?.facilities ?? []}
           selectedRegion={selected}
           onSelectRegion={setSelected}
+          onSelectFacility={setFacilityDetail}
           mode={mode}
           scenarioSite={tab === "build" ? scenarioSite : null}
           width={size.width}
@@ -397,6 +476,14 @@ export default function EnergyMap() {
           </button>
         )}
       </div>
+
+      {facilityDetail && (
+        <FacilityCard
+          facility={facilityDetail}
+          spotAUD={live?.regions.find((r) => r.code === facilityDetail.region)?.priceAUD ?? null}
+          onClose={() => setFacilityDetail(null)}
+        />
+      )}
 
       {/* Bottom-left: map key + attribution (hidden while desk/build use the column) */}
       {tab !== "desk" && tab !== "build" && (

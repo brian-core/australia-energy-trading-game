@@ -196,6 +196,51 @@ export default function BuildPanel({
         )}
       </div>
 
+      {project && (
+        <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
+          <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">PROJECT INFO</div>
+          <div className="space-y-1 text-[10px]">
+            <div className="leading-snug text-[var(--ink)]">{project.description}</div>
+            <div className="flex justify-between text-[var(--ink-soft)]">
+              <span>developer</span>
+              <span className="text-right">{project.developer}</span>
+            </div>
+            <div className="flex justify-between text-[var(--ink-soft)]">
+              <span>status</span>
+              <span className="text-right">{project.status}</span>
+            </div>
+            <div className="flex justify-between text-[var(--ink-soft)]">
+              <span>capacity</span>
+              <span>
+                {Math.abs(project.mw).toLocaleString()} MW{project.mw < 0 ? " retired" : ""}
+                {project.storage ? ` · ${project.storage}` : ""}
+              </span>
+            </div>
+            {project.cost && (
+              <div className="flex justify-between text-[var(--ink-soft)]">
+                <span>indicative cost</span>
+                <span>{project.cost}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-[var(--ink-soft)]">
+              <span>target</span>
+              <span>{project.year}</span>
+            </div>
+          </div>
+          {project.url && (
+            <a
+              href={project.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-block rounded border px-2 py-0.5 text-[10px] tracking-wider text-[var(--ink-soft)] hover:text-[var(--ink)]"
+              style={{ borderColor: "var(--edge)" }}
+            >
+              PROJECT SITE ↗
+            </a>
+          )}
+        </div>
+      )}
+
       {!result ? (
         <div className="text-[10px] text-[var(--ink-soft)]">loading price history…</div>
       ) : (

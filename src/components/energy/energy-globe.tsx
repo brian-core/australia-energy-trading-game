@@ -48,10 +48,11 @@ function tooltipHtml(point: MapPoint): string {
     return box(
       `<b>${point.name}</b><br/>` +
         `<span style="color:${meta.color}">●</span> ${meta.label} · ${fmtMW(point.capacityMW)} capacity` +
+        (point.owner ? `<br/>${point.owner}` : "") +
         (point.spotAUD != null
           ? `<br/>merchant spot <span style="color:${priceColor(point.spotAUD)}">$${point.spotAUD.toFixed(0)}/MWh</span>`
           : "") +
-        (point.region ? `<br/><span style="opacity:.6">${point.region}</span>` : ""),
+        `<br/><span style="opacity:.6">${point.region ? point.region + " · " : ""}click for details</span>`,
     );
   }
   if (point.kind === "pricecol") {
@@ -83,6 +84,7 @@ export default function EnergyGlobe({
   facilities,
   selectedRegion,
   onSelectRegion,
+  onSelectFacility,
   mode,
   scenarioSite,
   width,
@@ -93,6 +95,7 @@ export default function EnergyGlobe({
   facilities: Facility[];
   selectedRegion: string | null;
   onSelectRegion: (code: string | null) => void;
+  onSelectFacility?: (facility: Facility) => void;
   mode: MapMode;
   scenarioSite?: { lat: number; lng: number; label: string } | null;
   width: number;
@@ -227,7 +230,20 @@ export default function EnergyGlobe({
       pointLabel={(p) => tooltipHtml(p as MapPoint)}
       onPointClick={(p) => {
         const point = p as MapPoint;
-        onSelectRegion(point.kind === "facility" ? null : point.region.code);
+        if (point.kind === "facility") {
+          onSelectFacility?.({
+            name: point.name,
+            lat: point.lat,
+            lng: point.lng,
+            fuel: point.fuel,
+            capacityMW: point.capacityMW,
+            region: point.region,
+            owner: point.owner,
+            url: point.url,
+          });
+        } else {
+          onSelectRegion(point.region.code);
+        }
       }}
       arcsData={arcs}
       arcStartLat="fromLat"

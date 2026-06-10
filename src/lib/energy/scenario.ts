@@ -34,25 +34,99 @@ export interface PipelineProject {
   year: number;
   lat: number;
   lng: number;
+  developer: string;
+  status: string;
+  /** One-line context for the detail card. */
+  description: string;
+  /** Storage volume for batteries/PHES, e.g. "350 GWh". */
+  storage?: string;
+  /** Indicative cost where publicly cited. */
+  cost?: string;
+  url?: string;
 }
 
-// Real announced/committed projects and scheduled closures. Capacities and
-// dates are indicative — the pipeline moves; treat as scenario seeds, not a
-// project register.
+// Real announced/committed projects and scheduled closures. Capacities,
+// dates, statuses and costs are indicative (verified mid-2026 where noted) —
+// the pipeline moves; treat as scenario seeds, not a project register.
 export const PIPELINE_PROJECTS: PipelineProject[] = [
-  { id: "snowy2", name: "Snowy 2.0 (pumped hydro)", region: "NSW1", tech: "phes", mw: 2200, year: 2028, lat: -36.0, lng: 148.4 },
-  { id: "borumba", name: "Borumba (pumped hydro)", region: "QLD1", tech: "phes", mw: 2000, year: 2030, lat: -26.5, lng: 152.55 },
-  { id: "wsb2", name: "Liddell / Hunter battery", region: "NSW1", tech: "battery", mw: 500, year: 2026, lat: -32.37, lng: 150.98 },
-  { id: "nes2", name: "New England Solar stage 2", region: "NSW1", tech: "solar", mw: 320, year: 2026, lat: -30.65, lng: 151.6 },
-  { id: "gpe", name: "Golden Plains East (wind)", region: "VIC1", tech: "wind", mw: 577, year: 2027, lat: -37.9, lng: 144.1 },
-  { id: "melton", name: "Melton BESS", region: "VIC1", tech: "battery", mw: 600, year: 2027, lat: -37.68, lng: 144.58 },
-  { id: "goyder", name: "Goyder South (wind)", region: "SA1", tech: "wind", mw: 412, year: 2027, lat: -33.85, lng: 139.05 },
-  { id: "wambo", name: "Wambo Wind stage 2", region: "QLD1", tech: "wind", mw: 504, year: 2027, lat: -26.9, lng: 150.9 },
-  { id: "collie", name: "Collie battery stage 2", region: "WEM", tech: "battery", mw: 500, year: 2027, lat: -33.36, lng: 116.3 },
-  { id: "eraring-x", name: "Eraring closure (coal)", region: "NSW1", tech: "closure", mw: -2880, closureFuel: "coal", year: 2027, lat: -33.06, lng: 151.52 },
-  { id: "yallourn-x", name: "Yallourn W closure (coal)", region: "VIC1", tech: "closure", mw: -1480, closureFuel: "coal", year: 2028, lat: -38.18, lng: 146.36 },
-  { id: "callideb-x", name: "Callide B closure (coal)", region: "QLD1", tech: "closure", mw: -700, closureFuel: "coal", year: 2028, lat: -24.34, lng: 150.61 },
-  { id: "muja-x", name: "Muja D closure (coal)", region: "WEM", tech: "closure", mw: -392, closureFuel: "coal", year: 2026, lat: -33.45, lng: 116.31 },
+  {
+    id: "snowy2", name: "Snowy 2.0 (pumped hydro)", region: "NSW1", tech: "phes", mw: 2200, year: 2028, lat: -36.0, lng: 148.4,
+    developer: "Snowy Hydro (Commonwealth)", status: "under construction (~67% complete)", storage: "≈350 GWh", cost: "≈$12b",
+    description: "Links Tantangara and Talbingo reservoirs via 27km of tunnels; six 367MW pump-turbines. First power targeted ~2027, full operation Dec 2028.",
+    url: "https://www.snowyhydro.com.au/snowy-20/about/",
+  },
+  {
+    id: "borumba", name: "Borumba (pumped hydro)", region: "QLD1", tech: "phes", mw: 2000, year: 2030, lat: -26.5, lng: 152.55,
+    developer: "Queensland Hydro (state)", status: "early works / design", storage: "≈48 GWh (24h)", cost: "≈$14b+",
+    description: "24-hour pumped hydro near Imbil, the anchor of Queensland's storage plan.",
+    url: "https://www.qldhydro.com.au/borumba",
+  },
+  {
+    id: "wsb2", name: "Liddell / Hunter battery", region: "NSW1", tech: "battery", mw: 500, year: 2026, lat: -32.37, lng: 150.98,
+    developer: "AGL Energy", status: "under construction", storage: "2h (1 GWh)",
+    description: "Grid battery on the retired Liddell coal site, first stage of AGL's Hunter Energy Hub.",
+    url: "https://www.agl.com.au/about-agl/how-we-source-energy/hunter-energy-hub",
+  },
+  {
+    id: "nes2", name: "New England Solar stage 2", region: "NSW1", tech: "solar", mw: 320, year: 2026, lat: -30.65, lng: 151.6,
+    developer: "ACEN Australia", status: "construction / commissioning",
+    description: "Second stage taking the Uralla project to ≈1 GW with a co-located battery.",
+    url: "https://acenrenewables.com.au/project/new-england-solar/",
+  },
+  {
+    id: "gpe", name: "Golden Plains East (wind)", region: "VIC1", tech: "wind", mw: 577, year: 2027, lat: -37.9, lng: 144.1,
+    developer: "TagEnergy", status: "under construction",
+    description: "Eastern stage of Australia's largest wind farm (≈1.3 GW total at Rokewood).",
+    url: "https://goldenplainswindfarm.com.au",
+  },
+  {
+    id: "melton", name: "Melbourne Renewable Energy Hub BESS", region: "VIC1", tech: "battery", mw: 600, year: 2027, lat: -37.68, lng: 144.58,
+    developer: "Equis", status: "under construction", storage: "1.6 GWh",
+    description: "Large grid battery at Melton supporting Victoria's renewables shift.",
+    url: "https://www.equisdev.com",
+  },
+  {
+    id: "goyder", name: "Goyder South (wind)", region: "SA1", tech: "wind", mw: 412, year: 2027, lat: -33.85, lng: 139.05,
+    developer: "Neoen", status: "staged construction",
+    description: "Wind stage of the Goyder renewables precinct near Burra.",
+    url: "https://goyderrenewables.com.au",
+  },
+  {
+    id: "wambo", name: "Wambo Wind Farm (both stages)", region: "QLD1", tech: "wind", mw: 504, year: 2027, lat: -26.9, lng: 150.9,
+    developer: "Stanwell + Cubico JV", status: "under construction",
+    description: "Two-stage wind farm near Jandowae backed by Queensland government offtake.",
+    url: "https://wambowindfarm.com.au",
+  },
+  {
+    id: "collie", name: "Collie battery stage 2", region: "WEM", tech: "battery", mw: 500, year: 2027, lat: -33.36, lng: 116.3,
+    developer: "Neoen", status: "construction", storage: "4h",
+    description: "Expansion of WA's biggest battery, firming the SWIS as coal exits.",
+    url: "https://www.neoen.com",
+  },
+  {
+    id: "eraring-x", name: "Eraring closure (coal)", region: "NSW1", tech: "closure", mw: -2880, closureFuel: "coal", year: 2027, lat: -33.06, lng: 151.52,
+    developer: "Origin Energy", status: "extended to Aug 2027 under NSW underwriting",
+    description: "Australia's largest power station; closure deferred once already — the defining NSW supply event.",
+    url: "https://www.originenergy.com.au",
+  },
+  {
+    id: "yallourn-x", name: "Yallourn W closure (coal)", region: "VIC1", tech: "closure", mw: -1480, closureFuel: "coal", year: 2028, lat: -38.18, lng: 146.36,
+    developer: "EnergyAustralia", status: "scheduled mid-2028",
+    description: "Brown-coal exit covering ~20% of Victoria's supply; backed by the Wooreen battery commitment.",
+    url: "https://www.energyaustralia.com.au",
+  },
+  {
+    id: "callideb-x", name: "Callide B closure (coal)", region: "QLD1", tech: "closure", mw: -700, closureFuel: "coal", year: 2028, lat: -24.34, lng: 150.61,
+    developer: "CS Energy (state)", status: "scheduled 2028",
+    description: "First scheduled Queensland coal exit under the state energy plan.",
+    url: "https://www.csenergy.com.au",
+  },
+  {
+    id: "muja-x", name: "Muja D closure (coal)", region: "WEM", tech: "closure", mw: -392, closureFuel: "coal", year: 2026, lat: -33.45, lng: 116.31,
+    developer: "Synergy (state)", status: "staged retirement underway",
+    description: "Final Muja units in WA's plan to exit state-owned coal by ~2030.",
+    url: "https://www.synergy.net.au",
+  },
 ];
 
 // Approximate registered capacity by fuel, MW (stylized; ±, mid-2020s).
