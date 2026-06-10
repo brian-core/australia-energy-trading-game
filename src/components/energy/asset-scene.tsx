@@ -26,20 +26,6 @@ function money(x: number): string {
   return `$${abs.toFixed(0)}`;
 }
 
-function groundColor(fuel: Facility["fuel"], offshore: boolean): number {
-  if (offshore) return 0x1c4a5e;
-  switch (fuel) {
-    case "solar":
-      return 0x8a6d3b;
-    case "wind":
-      return 0x55672f;
-    case "hydro":
-      return 0x4a5a3a;
-    default:
-      return 0x3a4046;
-  }
-}
-
 export default function AssetScene({
   facility,
   game,
@@ -52,6 +38,13 @@ export default function AssetScene({
   onClose: () => void;
 }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
+  // Crossfade in after the globe finishes its dive; fade out on exit.
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setVisible(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const closingRef = useRef<number | null>(null);
   const [xray, setXray] = useState(false);
   const xrayRef = useRef(false);
   useEffect(() => {
@@ -92,37 +85,33 @@ export default function AssetScene({
     mount.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0b1018);
-    scene.fog = new THREE.Fog(0x0b1018, 90, 220);
+    // Day/night sky from AEST-ish local time.
+    const h = (new Date().getUTCHours() + 10) % 24;
+    const daylight = Math.max(Math.sin((Math.PI * (h - 6)) / 13), 0.22);
+    const sky = new THREE.Color(0x0c1322).lerp(new THREE.Color(0x9fc1d8), Math.max(daylight - 0.22, 0) / 0.78);
+    scene.background = sky;
+    scene.fog = new THREE.Fog(sky, 140, 480);
 
-    const camera = new THREE.PerspectiveCamera(50, mount.clientWidth / mount.clientHeight, 0.1, 500);
-    camera.position.set(38, 26, 48);
+    const camera = new THREE.PerspectiveCamera(50, mount.clientWidth / mount.clientHeight, 0.1, 900);
+    const CAM_HIGH = new THREE.Vector3(2, 240, 10);
+    const CAM_REST = new THREE.Vector3(46, 32, 58);
+    camera.position.copy(CAM_HIGH);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 5, 0);
-    controls.maxDistance = 140;
+    controls.maxDistance = 220;
     controls.minDistance = 8;
     controls.maxPolarAngle = Math.PI / 2.05;
     controls.enableDamping = true;
+    controls.enabled = false;
 
-    // Day/night lighting from AEST-ish local time.
-    const h = (new Date().getUTCHours() + 10) % 24;
-    const daylight = Math.max(Math.sin((Math.PI * (h - 6)) / 13), 0.2);
-    scene.add(new THREE.HemisphereLight(0xbfd6e0, 0x20242a, 0.5 + daylight * 0.5));
-    const sun = new THREE.DirectionalLight(0xfff2dd, 0.4 + daylight * 1.1);
+    scene.add(new THREE.HemisphereLight(0xcfe0ea, 0x2a2e34, 0.7 + daylight * 0.5));
+    const sun = new THREE.DirectionalLight(0xfff2dd, 0.5 + daylight * 1.2);
     sun.position.set(Math.cos((h / 24) * Math.PI * 2) * 60, 30 + daylight * 50, -40);
     scene.add(sun);
     // Site floodlights so night visits stay readable.
-    const flood = new THREE.PointLight(0xfff4e0, (1 - daylight) * 900, 160, 1.8);
-    flood.position.set(0, 35, 10);
+    const flood = new THREE.PointLight(0xfff4e0, (1 - daylight) * 1400, 220, 1.7);
+    flood.position.set(0, 40, 10);
     scene.add(flood);
-
-    const offshore = /offshore/i.test(facility.name);
-    const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(130, 48),
-      new THREE.MeshLambertMaterial({ color: groundColor(facility.fuel, offshore) }),
-    );
-    ground.rotation.x = -Math.PI / 2;
-    scene.add(ground);
 
     const built = buildAssetScene(facility.fuel, facility.capacityMW, facility.name);
     builtRef.current = built;
@@ -154,9 +143,24 @@ export default function AssetScene({
 
     let raf = 0;
     const t0 = performance.now();
+    const INTRO_MS = 1600;
+    const ease = (k: number) => 1 - Math.pow(1 - k, 3);
     const animate = () => {
       raf = requestAnimationFrame(animate);
-      const t = (performance.now() - t0) / 1000;
+      const nowMs = performance.now();
+      const t = (nowMs - t0) / 1000;
+      // Continue the dive: drop from orbit height to the resting shot.
+      if (nowMs - t0 < INTRO_MS) {
+        camera.position.lerpVectors(CAM_HIGH, CAM_REST, ease((nowMs - t0) / INTRO_MS));
+        camera.lookAt(0, 5, 0);
+      } else if (closingRef.current != null) {
+        const k = Math.min((nowMs - closingRef.current) / 900, 1);
+        controls.enabled = false;
+        camera.position.lerpVectors(CAM_REST, CAM_HIGH, ease(k));
+        camera.lookAt(0, 5, 0);
+      } else if (!controls.enabled) {
+        controls.enabled = true;
+      }
       built.tick(t, outputRef.current, conditionsRef.current);
       // Status materials track live condition; shells fade in X-ray mode.
       for (const comp of built.components) {
@@ -207,10 +211,18 @@ export default function AssetScene({
   const busy = owned?.job != null && owned.job.until > game.now;
   const outMW = Math.round(outputFactor * facility.capacityMW);
 
-  const close = useCallback(() => onClose(), [onClose]);
+  const close = useCallback(() => {
+    if (closingRef.current != null) return;
+    closingRef.current = performance.now();
+    setVisible(false);
+    window.setTimeout(onClose, 900);
+  }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-30 bg-[#0b1018] font-[family-name:var(--f-mono)]">
+    <div
+      className="fixed inset-0 z-30 font-[family-name:var(--f-mono)] transition-opacity duration-700"
+      style={{ opacity: visible ? 1 : 0 }}
+    >
       <div ref={mountRef} className="absolute inset-0" />
 
       {/* Top bar */}

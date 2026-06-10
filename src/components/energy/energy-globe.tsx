@@ -121,7 +121,7 @@ export default function EnergyGlobe({
   /** Player-owned assets (OPS game) — highlighted with pulsing rings. */
   ownedAssets?: Array<{ lat: number; lng: number; id: string }>;
   /** Imperative fly-to target; bump `seq` to retrigger. */
-  flyTo?: { lat: number; lng: number; seq: number } | null;
+  flyTo?: { lat: number; lng: number; seq: number; altitude?: number; ms?: number } | null;
   width: number;
   height: number;
 }) {
@@ -207,7 +207,7 @@ export default function EnergyGlobe({
     if (!globe || !flyTo || flyTo.seq === flySeqRef.current) return;
     flySeqRef.current = flyTo.seq;
     globe.controls().autoRotate = false;
-    globe.pointOfView({ lat: flyTo.lat, lng: flyTo.lng, altitude: 0.06 }, 1200);
+    globe.pointOfView({ lat: flyTo.lat, lng: flyTo.lng, altitude: flyTo.altitude ?? 0.06 }, flyTo.ms ?? 1200);
   }, [flyTo]);
 
   const rings = useMemo(() => {

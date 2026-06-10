@@ -295,7 +295,7 @@ export default function EnergyMap() {
   const [scenarioSite, setScenarioSite] = useState<ScenarioSite | null>(null);
   const [facilityDetail, setFacilityDetail] = useState<Facility | null>(null);
   const [siteFacility, setSiteFacility] = useState<Facility | null>(null);
-  const [flyTo, setFlyTo] = useState<{ lat: number; lng: number; seq: number } | null>(null);
+  const [flyTo, setFlyTo] = useState<{ lat: number; lng: number; seq: number; altitude?: number; ms?: number } | null>(null);
   const flySeq = useRef(0);
   const focusAsset = useCallback((lat: number, lng: number) => {
     flySeq.current += 1;
@@ -303,6 +303,32 @@ export default function EnergyMap() {
   }, []);
   // OPS game clock runs regardless of tab so the fleet keeps earning.
   const game = useEnergyGame(live, true);
+
+  // Seamless site entry: dive the globe camera onto the asset, then mount the
+  // scene (which continues the descent and crossfades in). Exit reverses.
+  const enterTimer = useRef<number | null>(null);
+  const enterSite = useCallback(
+    (f: Facility) => {
+      setFacilityDetail(null);
+      flySeq.current += 1;
+      setFlyTo({ lat: f.lat, lng: f.lng, seq: flySeq.current, altitude: 0.03, ms: 1500 });
+      if (enterTimer.current) window.clearTimeout(enterTimer.current);
+      enterTimer.current = window.setTimeout(() => setSiteFacility(f), 1450);
+    },
+    [],
+  );
+  useEffect(() => () => {
+    if (enterTimer.current) window.clearTimeout(enterTimer.current);
+  }, []);
+  const exitSite = useCallback(() => {
+    setSiteFacility(null);
+    // Pull the globe camera back out to continue the ascent.
+    setFlyTo((prev) => {
+      if (!prev) return prev;
+      flySeq.current += 1;
+      return { ...prev, seq: flySeq.current, altitude: 0.5, ms: 1400 };
+    });
+  }, []);
 
   // 7-day spot history, loaded the first time the price or build view opens.
   const [history7d, setHistory7d] = useState<HistoryPayload | null>(null);
@@ -432,7 +458,7 @@ export default function EnergyMap() {
               live={live}
               facilities={facilities?.facilities ?? []}
               onFocusAsset={focusAsset}
-              onEnterSite={setSiteFacility}
+              onEnterSite={enterSite}
             />
           </div>
         )}
@@ -517,10 +543,7 @@ export default function EnergyMap() {
           facility={facilityDetail}
           spotAUD={live?.regions.find((r) => r.code === facilityDetail.region)?.priceAUD ?? null}
           onClose={() => setFacilityDetail(null)}
-          onEnterSite={(f) => {
-            setFacilityDetail(null);
-            setSiteFacility(f);
-          }}
+          onEnterSite={enterSite}
         />
       )}
 
@@ -529,7 +552,7 @@ export default function EnergyMap() {
           facility={siteFacility}
           game={game}
           spotAUD={live?.regions.find((r) => r.code === siteFacility.region)?.priceAUD ?? null}
-          onClose={() => setSiteFacility(null)}
+          onClose={exitSite}
         />
       )}
 
