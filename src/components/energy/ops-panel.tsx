@@ -37,11 +37,13 @@ export default function OpsPanel({
   live,
   facilities,
   onFocusAsset,
+  onEnterSite,
 }: {
   game: GameApi;
   live: LivePayload;
   facilities: Facility[];
   onFocusAsset: (lat: number, lng: number) => void;
+  onEnterSite: (facility: Facility) => void;
 }) {
   const { state, buy, sell, maintain, reset, now } = game;
   const [marketOpen, setMarketOpen] = useState(state.fleet.length === 0);
@@ -117,13 +119,31 @@ export default function OpsPanel({
                   >
                     <span style={{ color: FUEL_META[asset.fuel].color }}>●</span> {asset.name}
                   </button>
-                  <button
-                    onClick={() => sell(asset.id)}
-                    className="text-[9px] tracking-widest text-[var(--ink-soft)] hover:text-[#e2483d]"
-                    title={`sell for ${money(sellPrice(asset))}`}
-                  >
-                    SELL {money(sellPrice(asset))}
-                  </button>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <button
+                      onClick={() =>
+                        onEnterSite({
+                          name: asset.name,
+                          lat: asset.lat,
+                          lng: asset.lng,
+                          fuel: asset.fuel,
+                          capacityMW: asset.capacityMW,
+                          region: asset.region,
+                        })
+                      }
+                      className="rounded border px-1.5 py-0.5 text-[9px] tracking-widest"
+                      style={{ borderColor: "var(--edge)", color: "var(--gen)" }}
+                    >
+                      ▶ SITE
+                    </button>
+                    <button
+                      onClick={() => sell(asset.id)}
+                      className="text-[9px] tracking-widest text-[var(--ink-soft)] hover:text-[#e2483d]"
+                      title={`sell for ${money(sellPrice(asset))}`}
+                    >
+                      SELL {money(sellPrice(asset))}
+                    </button>
+                  </span>
                 </div>
                 <div className="mt-0.5 text-[10px] text-[var(--ink-soft)]">
                   {Math.round(out)} / {asset.capacityMW} MW out

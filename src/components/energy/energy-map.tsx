@@ -24,6 +24,8 @@ const EnergyGlobe = dynamic(() => import("./energy-globe"), {
   ),
 });
 
+const AssetScene = dynamic(() => import("./asset-scene"), { ssr: false });
+
 const POLL_MS = 60_000;
 
 function fmtMW(mw: number): string {
@@ -214,10 +216,12 @@ function FacilityCard({
   facility,
   spotAUD,
   onClose,
+  onEnterSite,
 }: {
   facility: Facility;
   spotAUD: number | null;
   onClose: () => void;
+  onEnterSite: (facility: Facility) => void;
 }) {
   const meta = FUEL_META[facility.fuel];
   const q = encodeURIComponent(`${facility.name} power station Australia`);
@@ -259,6 +263,13 @@ function FacilityCard({
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
+        <button
+          onClick={() => onEnterSite(facility)}
+          className="rounded px-2 py-0.5 text-[10px] tracking-widest"
+          style={{ background: "var(--gen)", color: "#0b0d11" }}
+        >
+          ▶ ENTER SITE
+        </button>
         {facility.url && <LinkChip href={facility.url} label="OFFICIAL SITE" />}
         <LinkChip href={`https://www.google.com/search?q=${q}`} label="GOOGLE" />
         <LinkChip
@@ -283,6 +294,7 @@ export default function EnergyMap() {
 
   const [scenarioSite, setScenarioSite] = useState<ScenarioSite | null>(null);
   const [facilityDetail, setFacilityDetail] = useState<Facility | null>(null);
+  const [siteFacility, setSiteFacility] = useState<Facility | null>(null);
   const [flyTo, setFlyTo] = useState<{ lat: number; lng: number; seq: number } | null>(null);
   const flySeq = useRef(0);
   const focusAsset = useCallback((lat: number, lng: number) => {
@@ -420,6 +432,7 @@ export default function EnergyMap() {
               live={live}
               facilities={facilities?.facilities ?? []}
               onFocusAsset={focusAsset}
+              onEnterSite={setSiteFacility}
             />
           </div>
         )}
@@ -504,6 +517,19 @@ export default function EnergyMap() {
           facility={facilityDetail}
           spotAUD={live?.regions.find((r) => r.code === facilityDetail.region)?.priceAUD ?? null}
           onClose={() => setFacilityDetail(null)}
+          onEnterSite={(f) => {
+            setFacilityDetail(null);
+            setSiteFacility(f);
+          }}
+        />
+      )}
+
+      {siteFacility && (
+        <AssetScene
+          facility={siteFacility}
+          game={game}
+          spotAUD={live?.regions.find((r) => r.code === siteFacility.region)?.priceAUD ?? null}
+          onClose={() => setSiteFacility(null)}
         />
       )}
 
