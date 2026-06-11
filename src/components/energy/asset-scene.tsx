@@ -95,7 +95,7 @@ export default function AssetScene({
     if (!mount) return;
 
     // Retro pixel look: render small, upscale with nearest-neighbour.
-    const PIXEL_SCALE = 0.32;
+    const PIXEL_SCALE = 0.55;
     const renderer = new THREE.WebGLRenderer({ antialias: false });
     renderer.setSize(
       Math.round(mount.clientWidth * PIXEL_SCALE),
@@ -113,23 +113,41 @@ export default function AssetScene({
     const daylight = Math.max(Math.sin((Math.PI * (h - 6)) / 13), 0.22);
     const sky = new THREE.Color(0x0c1322).lerp(new THREE.Color(0x8ecdf0), Math.max(daylight - 0.22, 0) / 0.78);
     scene.background = sky;
-    scene.fog = new THREE.Fog(sky, 140, 480);
+    // No atmospheric fog: the iso pixel style is crisp to the horizon.
 
-    const camera = new THREE.PerspectiveCamera(27, mount.clientWidth / mount.clientHeight, 0.1, 1400);
-    const CAM_HIGH = new THREE.Vector3(4, 420, 16);
-    const CAM_REST = new THREE.Vector3(86, 58, 108);
+    // Orthographic dimetric projection — the SimCity 3000 / RCT camera.
+    const VIEW_H = 110;
+    const aspect = mount.clientWidth / mount.clientHeight;
+    const camera = new THREE.OrthographicCamera(
+      (-VIEW_H * aspect) / 2,
+      (VIEW_H * aspect) / 2,
+      VIEW_H / 2,
+      -VIEW_H / 2,
+      -600,
+      1600,
+    );
+    // Classic 2:1 iso elevation (~26.6°), azimuth 45°.
+    const CAM_HIGH = new THREE.Vector3(12, 420, 18);
+    const CAM_REST = new THREE.Vector3(170, 120, 170);
+    const ZOOM_HIGH = 0.45;
+    const ZOOM_REST = 1;
     camera.position.copy(CAM_HIGH);
+    camera.zoom = ZOOM_HIGH;
+    camera.updateProjectionMatrix();
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 5, 0);
-    controls.maxDistance = 320;
-    controls.minDistance = 8;
-    controls.maxPolarAngle = Math.PI / 2.05;
+    controls.minZoom = 0.4;
+    controls.maxZoom = 4;
+    // Keep the tilt inside a tycoon-ish band; spin freely.
+    controls.minPolarAngle = 0.95;
+    controls.maxPolarAngle = 1.25;
     controls.enableDamping = true;
     controls.enabled = false;
 
-    scene.add(new THREE.HemisphereLight(0xcfe0ea, 0x2a2e34, 0.7 + daylight * 0.5));
-    const sun = new THREE.DirectionalLight(0xfff2dd, 0.5 + daylight * 1.2);
-    sun.position.set(Math.cos((h / 24) * Math.PI * 2) * 60, 30 + daylight * 50, -40);
+    scene.add(new THREE.HemisphereLight(0xdde9f0, 0x3a4046, 0.85 + daylight * 0.35));
+    // Fixed key direction so box faces always read as three clean tones.
+    const sun = new THREE.DirectionalLight(0xfff4e0, 0.45 + daylight * 0.75);
+    sun.position.set(120, 160, 60);
     scene.add(sun);
     // Site floodlights so night visits stay readable.
     const flood = new THREE.PointLight(0xfff4e0, (1 - daylight) * 1400, 220, 1.7);
@@ -213,12 +231,17 @@ export default function AssetScene({
       const t = (nowMs - t0) / 1000;
       // Continue the dive: drop from orbit height to the resting shot.
       if (nowMs - t0 < INTRO_MS) {
-        camera.position.lerpVectors(CAM_HIGH, CAM_REST, ease((nowMs - t0) / INTRO_MS));
+        const k = ease((nowMs - t0) / INTRO_MS);
+        camera.position.lerpVectors(CAM_HIGH, CAM_REST, k);
+        camera.zoom = ZOOM_HIGH + (ZOOM_REST - ZOOM_HIGH) * k;
+        camera.updateProjectionMatrix();
         camera.lookAt(0, 5, 0);
       } else if (closingRef.current != null) {
         const k = Math.min((nowMs - closingRef.current) / 900, 1);
         controls.enabled = false;
         camera.position.lerpVectors(CAM_REST, CAM_HIGH, ease(k));
+        camera.zoom = ZOOM_REST + (ZOOM_HIGH - ZOOM_REST) * ease(k);
+        camera.updateProjectionMatrix();
         camera.lookAt(0, 5, 0);
       } else if (!controls.enabled) {
         controls.enabled = true;
@@ -265,7 +288,9 @@ export default function AssetScene({
     animate();
 
     const onResize = () => {
-      camera.aspect = mount.clientWidth / mount.clientHeight;
+      const a = mount.clientWidth / mount.clientHeight;
+      camera.left = (-VIEW_H * a) / 2;
+      camera.right = (VIEW_H * a) / 2;
       camera.updateProjectionMatrix();
       renderer.setSize(
         Math.round(mount.clientWidth * PIXEL_SCALE),
