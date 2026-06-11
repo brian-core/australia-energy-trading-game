@@ -1,7 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { cloudEnabled, useSession } from "@/lib/cloud";
 import type { HistoryPayload } from "@/lib/energy/history";
 import { PRICE_BANDS, RETAIL_REF, fmtRetail, priceColor, spotAsCkwh } from "@/lib/energy/pricing";
 import BuildPanel, { type ScenarioSite } from "./build-panel";
@@ -303,6 +305,7 @@ export default function EnergyMap() {
   }, []);
   // OPS game clock runs regardless of tab so the fleet keeps earning.
   const game = useEnergyGame(live, true);
+  const session = useSession();
 
   // Seamless site entry: dive the globe camera onto the asset, then mount the
   // scene (which continues the descent and crossfades in). Exit reverses.
@@ -436,8 +439,17 @@ export default function EnergyMap() {
             </button>
           ))}
         </div>
-        <div className="mt-1">
+        <div className="mt-1 flex items-center justify-between gap-2">
           <StatusChip live={live} stale={stale} />
+          {cloudEnabled() && !session && (
+            <Link
+              href="/login"
+              className="rounded border px-1.5 py-0.5 font-[family-name:var(--f-mono)] text-[9px] tracking-widest text-[var(--gen)]"
+              style={{ borderColor: "var(--edge)" }}
+            >
+              SIGN IN
+            </Link>
+          )}
         </div>
         {live && tab === "desk" && (
           <div className="mt-3">

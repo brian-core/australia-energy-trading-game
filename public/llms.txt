@@ -1,0 +1,44 @@
+# Energy Planet
+
+> A free browser game built on Australia's real electricity market. Players run
+> a power generation company: they buy real Australian power stations, keep
+> them maintained, and earn the live AEMO wholesale spot price, which updates
+> every five minutes. It is also a serious live dashboard of the Australian
+> grid.
+
+## What it is
+
+- /play — the app. Five views:
+  - POWER: live 3D map of Australia's grid. Generation vs demand columns per
+    region, every major power station (real names, locations, fuels,
+    capacities), interconnector flows, city supply arcs, satellite imagery on
+    zoom.
+  - PRICE: live wholesale spot price per region (AEMO 5-minute dispatch)
+    against benchmark retail rates (DMO/VDO), with 7-day and 90-day history.
+  - DESK: a paper-trading desk for a hypothetical flat-rate energy retailer —
+    swaps and caps marked against the live spot, with backtesting and alerts.
+  - BUILD: a stylised merit-order model of how new projects (e.g. Snowy 2.0)
+    or coal closures (e.g. Eraring) would shift regional prices and the
+    generation mix.
+  - OPS: the game. Start with $500m, buy stations, maintain them (panel
+    cleaning, turbine gearboxes, coal deliveries, cell balancing), earn the
+    live spot price. Each site renders as an isometric pixel-art diorama with
+    an X-ray inspection mode.
+- /login — passwordless email sign-in. Accounts add cross-device cloud saves
+  and a public leaderboard ranked by company value. Guest play needs no
+  account (saves in the browser).
+
+## Data
+
+- Sources: AEMO public dashboard feeds and OpenElectricity (formerly OpenNEM),
+  both refreshed every 5 minutes, covering the five NEM regions (QLD, NSW,
+  VIC, SA, TAS) and Western Australia's SWIS.
+- The trading, maintenance economics and price-impact modelling are
+  simulations for play and education. Nothing connects to any real market
+  system. Not financial advice. Not affiliated with AEMO.
+
+## Tech
+
+Next.js App Router, three.js (react-globe.gl + custom isometric scenes),
+Supabase (optional accounts), deployed on Vercel. Open data, no tracking
+beyond basic analytics.
