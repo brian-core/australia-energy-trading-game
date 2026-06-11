@@ -16,12 +16,27 @@ export interface SceneComponent {
   statusMat: THREE.MeshLambertMaterial;
 }
 
+export interface ActiveJob {
+  taskId: string;
+  /** 0..1 through the job's duration. */
+  progress: number;
+}
+
 export interface BuiltAsset {
   root: THREE.Group;
   components: SceneComponent[];
   /** Exterior meshes faded out in X-ray mode. */
   shells: THREE.Mesh[];
-  tick: (tSec: number, outputFactor: number, conditions: Record<string, number>) => void;
+  /** Where the maintenance ute parks when idle. */
+  crewStart: [number, number, number];
+  /** Where the crew drives to for each task. */
+  workSites: Record<string, [number, number, number]>;
+  tick: (
+    tSec: number,
+    outputFactor: number,
+    conditions: Record<string, number>,
+    job?: ActiveJob | null,
+  ) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -402,6 +417,8 @@ function buildWind(capacityMW: number, offshore: boolean): BuiltAsset {
     root,
     components: [gearbox, software],
     shells: [],
+    crewStart: [-2, 0, 46],
+    workSites: { gearbox: [-cols * 9.5 + 9, 0, -30], software: [-8, 0, 42] },
     tick: (t, out) => {
       const speed = 0.5 + out * 5.5;
       rotors.forEach((rotor, i) => {
@@ -494,6 +511,8 @@ function buildSolar(capacityMW: number): BuiltAsset {
     root,
     components: [soiling, software],
     shells: [],
+    crewStart: [8, 0, fieldD / 2 + 3],
+    workSites: { soiling: [-6, 0, 0], software: [3, 0, -fieldD / 2 + 4] },
     tick: (_t, _out, conditions) => {
       const cond = (conditions.soiling ?? 100) / 100;
       panelMat.color.setRGB(0.1 + (1 - cond) * 0.42, 0.2 + (1 - cond) * 0.18, 0.46 + cond * 0.16);
@@ -586,6 +605,8 @@ function buildHydro(capacityMW: number): BuiltAsset {
     root,
     components: [mech],
     shells,
+    crewStart: [15, 0, 20],
+    workSites: { mech: [0, 0, 14] },
     tick: (t, out) => {
       const level = 4.2 + Math.sin(t / 34) * 1.4 - out * 2.2;
       water.position.y = Math.max(level, 1.2);
@@ -704,11 +725,28 @@ function buildCoal(capacityMW: number): BuiltAsset {
   coalstock.group.add(lamp.mesh);
   coalstock.group.add(cyl(0.1, 0.12, 8, mat(C.steelDark), -12, null, 23, 6));
   for (const dz of [-0.9, 0.9])
-    coalstock.group.add(box(padW - 10, 0.12, 0.22, mat(0x55595e), 0, 0.2, 30 + dz));
-  for (let i = 0; i < Math.min(nPiles + 1, 6); i++) {
-    coalstock.group.add(box(5.4, 1.7, 2.1, mat(0x5a3b2e), i * 6.4 - 14, 0.9, 30));
+    coalstock.group.add(box(padW + 120, 0.12, 0.22, mat(0x55595e), -40, 0.2, 30 + dz));
+  // Coal train: loco + hoppers. Parked off-site; rolls in during a delivery.
+  const train = new THREE.Group();
+  train.add(box(5, 2.6, 2.2, mat(0x3f6b9a), 0, null, 0));
+  train.add(box(1.6, 0.9, 1.8, mat(0x2b3036), 1.4, 3, 0));
+  const nWagons = Math.min(nPiles + 1, 6);
+  for (let i = 0; i < nWagons; i++) {
+    train.add(box(5.4, 1.7, 2.1, mat(0x5a3b2e), -(i + 1) * 6.2 - 0.5, 0.9, 0));
+    train.add(box(4.6, 0.5, 1.7, mat(0x1f2227), -(i + 1) * 6.2 - 0.5, 2, 0));
   }
+  train.position.set(-(padW / 2 + 50), 0, 30);
+  const trainParkedX = -(padW / 2 + 50);
+  const trainDockX = 6;
+  coalstock.group.add(train);
   coalstock.group.add(makeUte(-24, 16, 0.9));
+  // Lumps riding the conveyor while the plant runs.
+  const lumps: THREE.Mesh[] = [];
+  for (let i = 0; i < 6; i++) {
+    const lump = new THREE.Mesh(new THREE.SphereGeometry(0.55, 7, 6), mat(0x16181c));
+    lumps.push(lump);
+    coalstock.group.add(lump);
+  }
 
   const sub = makeSubstation();
   sub.position.set(-padW / 2 + 10, 0, 16);
@@ -723,7 +761,9 @@ function buildCoal(capacityMW: number): BuiltAsset {
     root,
     components: [coalstock, mech],
     shells,
-    tick: (t, out, conditions) => {
+    crewStart: [-24, 0, 16],
+    workSites: { coalstock: [-6, 0, 23], mech: [-10, 0, 10] },
+    tick: (t, out, conditions, job) => {
       const stock = Math.max((conditions.coalstock ?? 100) / 100, 0.1);
       piles.forEach((pile, i) => {
         const s2 = Math.max(stock - i * 0.06, 0.08);
@@ -736,6 +776,19 @@ function buildCoal(capacityMW: number): BuiltAsset {
         (puff.material as THREE.MeshLambertMaterial).opacity = Math.max(0.04, 0.34 * out * (1 - rise / 8));
       }
       for (const gen of gens) gen.rotation.x += (0.5 + out * 5) * 0.016;
+      // Delivery in progress: the train rolls in for the first stretch of the
+      // job, unloads, then rolls home once the crew is done.
+      const delivering = job?.taskId === "coalstock" ? job.progress : null;
+      const targetX =
+        delivering != null ? trainParkedX + (trainDockX - trainParkedX) * Math.min(delivering * 2.8, 1) : trainParkedX;
+      train.position.x += (targetX - train.position.x) * 0.04;
+      const lumpDir = cEnd.clone().sub(cStart);
+      lumps.forEach((lump, i) => {
+        const f = (t * (0.05 + out * 0.12) + i / 6) % 1;
+        lump.visible = out > 0.05;
+        lump.position.copy(cStart).addScaledVector(lumpDir, f);
+        lump.position.y += 1.1;
+      });
       blinkBeacons(beacons, t);
     },
   };
@@ -839,6 +892,8 @@ function buildGas(capacityMW: number): BuiltAsset {
     root,
     components: [mech, software],
     shells,
+    crewStart: [-14, 0, 14],
+    workSites: { mech: [-6, 0, 7], software: [-20, 0, 11] },
     tick: (t, out) => {
       for (const turb of turbs) turb.rotation.x += (0.4 + out * 7) * 0.016;
       flames.forEach((glow, i) => {
@@ -913,6 +968,8 @@ function buildBattery(capacityMW: number): BuiltAsset {
     root,
     components: [cells, software],
     shells: [],
+    crewStart: [2, 0, padD / 2 - 4],
+    workSites: { cells: [0, 0, 0], software: [-padW / 2 + 6, 0, padD / 2 - 9] },
     tick: (t, out) => {
       lampMats.forEach((lm, i) => {
         lm.opacity = 0.3 + 0.7 * Math.abs(Math.sin(t * (1 + out * 3) + i * 0.45));
@@ -955,6 +1012,8 @@ function buildGeneric(): BuiltAsset {
     root,
     components: [mech],
     shells,
+    crewStart: [8, 0, 14],
+    workSites: { mech: [0, 0, 7] },
     tick: (t, out) => {
       gen.rotation.x += (0.3 + out * 5) * 0.016;
       blinkBeacons(beacons, t);

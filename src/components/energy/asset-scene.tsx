@@ -74,6 +74,21 @@ export default function AssetScene({
     outputRef.current = outputFactor;
   }, [outputFactor]);
 
+  // Active maintenance job (owned assets only) so the scene can show the crew.
+  const jobRef = useRef<{ taskId: string; until: number; durationMs: number } | null>(null);
+  useEffect(() => {
+    if (owned?.job && owned.job.until > game.now) {
+      const def = tasks.find((t) => t.id === owned.job!.taskId);
+      jobRef.current = {
+        taskId: owned.job.taskId,
+        until: owned.job.until,
+        durationMs: (def?.durationSec ?? 60) * 1000,
+      };
+    } else {
+      jobRef.current = null;
+    }
+  }, [owned, game.now, tasks]);
+
   // Build the scene once per facility.
   useEffect(() => {
     const mount = mountRef.current;
@@ -116,6 +131,45 @@ export default function AssetScene({
     const built = buildAssetScene(facility.fuel, facility.capacityMW, facility.name);
     builtRef.current = built;
     scene.add(built.root);
+
+    // Maintenance crew rig: hi-vis ute with a flashing beacon; cones and
+    // workers appear once it arrives at the work site.
+    const rig = new THREE.Group();
+    const orange = new THREE.MeshLambertMaterial({ color: 0xe87b2e });
+    const uteBody = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.7, 1.4), orange);
+    uteBody.position.y = 0.65;
+    const uteCab = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.6, 1.3), orange);
+    uteCab.position.set(-0.4, 1.3, 0);
+    const beaconMat = new THREE.MeshLambertMaterial({ color: 0x3f8fd2, emissive: 0x1a4a8a });
+    const uteBeacon = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), beaconMat);
+    uteBeacon.position.set(-0.4, 1.72, 0);
+    rig.add(uteBody, uteCab, uteBeacon);
+    const wheelMat = new THREE.MeshLambertMaterial({ color: 0x1c1e22 });
+    for (const [wx, wz] of [[-0.95, 0.7], [0.95, 0.7], [-0.95, -0.7], [0.95, -0.7]] as const) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.25, 8), wheelMat);
+      w.rotation.x = Math.PI / 2;
+      w.position.set(wx, 0.32, wz);
+      rig.add(w);
+    }
+    const siteKit = new THREE.Group();
+    const coneMat = new THREE.MeshLambertMaterial({ color: 0xe87b2e });
+    for (let i = 0; i < 4; i++) {
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.8, 8), coneMat);
+      const a = (i / 4) * Math.PI * 2 + 0.5;
+      cone.position.set(Math.cos(a) * 2.4, 0.4, Math.sin(a) * 2.4);
+      siteKit.add(cone);
+    }
+    const hiVis = new THREE.MeshLambertMaterial({ color: 0xf2c14e, emissive: 0x6a5210 });
+    for (const off of [-0.9, 0.9]) {
+      const worker = new THREE.Mesh(new THREE.BoxGeometry(0.45, 1.15, 0.45), hiVis);
+      worker.position.set(off, 0.95, 1.3);
+      siteKit.add(worker);
+    }
+    siteKit.visible = false;
+    rig.add(siteKit);
+    rig.visible = false;
+    scene.add(rig);
+    const crewStart = new THREE.Vector3(...built.crewStart);
 
     // Raycast clicks onto components for inspection.
     const raycaster = new THREE.Raycaster();
@@ -161,7 +215,32 @@ export default function AssetScene({
       } else if (!controls.enabled) {
         controls.enabled = true;
       }
-      built.tick(t, outputRef.current, conditionsRef.current);
+      // Job progress + crew choreography.
+      let activeJob: { taskId: string; progress: number } | null = null;
+      const jb = jobRef.current;
+      if (jb && jb.until > Date.now()) {
+        activeJob = {
+          taskId: jb.taskId,
+          progress: Math.min(Math.max(1 - (jb.until - Date.now()) / jb.durationMs, 0), 1),
+        };
+      }
+      if (activeJob) {
+        const siteArr = built.workSites[activeJob.taskId];
+        if (siteArr) {
+          rig.visible = true;
+          const site = new THREE.Vector3(siteArr[0], 0, siteArr[2]);
+          const driveK = Math.min(activeJob.progress / 0.22, 1);
+          const eased = 1 - Math.pow(1 - driveK, 2);
+          rig.position.lerpVectors(crewStart, site, eased);
+          if (driveK < 1) rig.lookAt(site.x, 0, site.z);
+          siteKit.visible = driveK >= 1;
+          const flash = (Math.sin(t * 9) + 1) / 2;
+          beaconMat.emissive.setRGB(0.1, 0.2 + 0.5 * flash, 0.9 * flash + 0.1);
+        }
+      } else {
+        rig.visible = false;
+      }
+      built.tick(t, outputRef.current, conditionsRef.current, activeJob);
       // Status materials track live condition; shells fade in X-ray mode.
       for (const comp of built.components) {
         comp.statusMat.color.setHex(condColorHex(conditionsRef.current[comp.taskId] ?? 100));
