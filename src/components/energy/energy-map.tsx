@@ -9,13 +9,14 @@ import { PRICE_BANDS, RETAIL_REF, fmtRetail, priceColor, spotAsCkwh } from "@/li
 import BuildPanel, { type ScenarioSite } from "./build-panel";
 import DeskPanel from "./desk-panel";
 import type { MapMode } from "./energy-globe";
+import LabPanel from "./lab-panel";
 import OpsPanel from "./ops-panel";
 import PriceChart from "./price-chart";
 import { useEnergyGame } from "./use-game";
 import { FUEL_META } from "@/lib/energy/regions";
 import type { Facility, FacilitiesPayload, FuelSlice, LivePayload, RegionLive } from "@/lib/energy/types";
 
-type ViewTab = "power" | "price" | "desk" | "build" | "ops";
+type ViewTab = "power" | "price" | "desk" | "build" | "ops" | "lab";
 
 const EnergyGlobe = dynamic(() => import("./energy-globe"), {
   ssr: false,
@@ -436,7 +437,7 @@ export default function EnergyMap() {
             className="mt-2 flex w-fit overflow-hidden rounded-md border font-[family-name:var(--f-mono)] text-[10px] tracking-widest"
             style={{ borderColor: "var(--edge)" }}
           >
-            {(["power", "price", "desk", "build", "ops"] as const).map((m) => (
+            {(["power", "price", "desk", "build", "ops", "lab"] as const).map((m) => (
               <button
                 key={m}
                 onClick={(e) => {
@@ -496,6 +497,11 @@ export default function EnergyMap() {
             <BuildPanel live={live} history={history7d} onScenarioSite={setScenarioSite} />
           </div>
         )}
+        {live && tab === "lab" && (
+          <div className="mt-3">
+            <LabPanel />
+          </div>
+        )}
         {live && tab === "ops" && (
           <div className="mt-3">
             <OpsPanel
@@ -507,7 +513,7 @@ export default function EnergyMap() {
             />
           </div>
         )}
-        {live && tab !== "desk" && tab !== "build" && tab !== "ops" && (
+        {live && tab !== "desk" && tab !== "build" && tab !== "ops" && tab !== "lab" && (
           <>
             <div className="mt-3 grid grid-cols-3 gap-2 font-[family-name:var(--f-mono)]">
               <div>
@@ -625,7 +631,7 @@ export default function EnergyMap() {
       )}
 
       {/* Bottom-left: map key + attribution (hidden while desk/build use the column) */}
-      {tab !== "desk" && tab !== "build" && tab !== "ops" && (
+      {tab !== "desk" && tab !== "build" && tab !== "ops" && tab !== "lab" && (
       <div
         className="absolute bottom-4 left-4 rounded-xl border p-3 font-[family-name:var(--f-mono)] text-[10px] text-[var(--ink-soft)] backdrop-blur max-md:hidden"
         style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
