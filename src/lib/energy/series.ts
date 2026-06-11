@@ -15,6 +15,8 @@ export interface RegionSeriesData {
   demandMW: number[];
   windMW: number[];
   solarMW: number[];
+  /** Coal + gas output — the dispatchable fleet, for outage inference. */
+  thermalMW: number[];
 }
 
 export interface SeriesPayload {
@@ -92,6 +94,7 @@ async function fetchRegionSeries(network: "NEM" | "WEM", region?: string): Promi
     demandMW: demand ? onGrid(demand, startMs, len) : sum([""]),
     windMW: sum(["wind"]),
     solarMW: sum(["solar"]),
+    thermalMW: sum(["coal", "gas"]),
   };
 }
 
@@ -116,7 +119,12 @@ function synthSeries(code: string, endMs: number): RegionSeriesData {
   const demandMW: number[] = [];
   const windMW: number[] = [];
   const solarMW: number[] = [];
+  const thermalMW: number[] = [];
   const startMs = capital.t[0];
+  // Demo outage: a chunk of the thermal fleet tripped ~2 days ago and is
+  // still offline, so the rolling-max availability visibly steps down.
+  const outageStart = len - 100;
+  const outageEnd = len;
   for (let i = 0; i < len; i++) {
     const h = Math.min(Math.floor(i / 2), hours - 1);
     const ts = startMs + i * 1800_000;
@@ -135,15 +143,19 @@ function synthSeries(code: string, endMs: number): RegionSeriesData {
     const solarOut = (k.solar * rad) / 950;
     // Price from residual demand through a convex curve.
     const residual = demand - windOut - solarOut;
-    const u = residual / (k.base * 1.25);
-    let price = 22 + 130 * Math.max(u, 0) ** 2.2;
-    if (u < 0.18) price = -20 + 200 * u; // glut → negative prices
+    const outage = i >= outageStart && i < outageEnd ? 0.72 : 1;
+    const availThermal = k.base * 1.05 * outage;
+    const thermal = Math.min(Math.max(residual, 0) * 0.95, availThermal);
+    const u = Math.max(residual, 0) / Math.max(availThermal, 1);
+    let price = 22 + 150 * Math.max(u, 0) ** 2.4;
+    if (residual / (k.base * 1.25) < 0.18) price = -20 + 200 * (residual / (k.base * 1.25));
     priceAUD.push(Math.round(price * 10) / 10);
     demandMW.push(Math.round(demand));
     windMW.push(Math.round(windOut));
     solarMW.push(Math.round(solarOut));
+    thermalMW.push(Math.round(thermal));
   }
-  return { startMs, intervalH: 0.5, t, priceAUD, demandMW, windMW, solarMW };
+  return { startMs, intervalH: 0.5, t, priceAUD, demandMW, windMW, solarMW, thermalMW };
 }
 
 export async function buildSeriesPayload(): Promise<SeriesPayload> {

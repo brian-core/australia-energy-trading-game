@@ -16,10 +16,12 @@ import { errorStats, ols, ols2, pearson, stdDev } from "./stats";
 export interface RegionFitInfo {
   corr: { priceTemp: number; priceWind: number; priceSolar: number; priceDemand: number; demandTemp: number; windGenWind: number; solarGenRad: number };
   sigma: { price: number; demand: number; wind: number; solar: number };
-  priceModel: { a: number; b: number; r2: number; sigma: number };
+  priceModel: { a: number; b: number; r2: number; sigma: number; basis: "utilisation" | "residual" };
   demandModel: { r2: number; coolPerDeg: number; heatPerDeg: number };
   windModel: { r2: number };
   solarModel: { r2: number };
+  /** Inferred thermal availability (rolling 48h max of coal+gas output). */
+  outage: { availNowMW: number; peak7dMW: number; impliedOutMW: number };
 }
 
 export interface RegionForecast {
@@ -89,9 +91,35 @@ export function fitAndProject(
   const cdd = tempH.map((x) => Math.max(x - 22, 0));
   const hdd = tempH.map((x) => Math.max(15 - x, 0));
   const demandFit = ols2(cdd, hdd, demandResid);
-  // Price: ~ residual demand share.
+  // Price model with outage awareness. Available thermal capacity is
+  // inferred as the rolling 48h max of coal+gas output: when a unit trips,
+  // that ceiling visibly drops. Where a region has a meaningful thermal
+  // fleet we fit price ~ utilisation (residual demand / available thermal),
+  // which reprices automatically when capacity is lost; otherwise we fall
+  // back to plain residual demand.
   const residual = t.map((_, i) => demandMW[i] - windMW[i] - solarMW[i]);
-  const priceFit = ols(residual, priceAUD);
+  const thermal = series.thermalMW ?? new Array(t.length).fill(NaN);
+  const WINDOW = 96; // 48h of 30-min steps
+  const avail: number[] = new Array(t.length).fill(NaN);
+  for (let i = 0; i < t.length; i++) {
+    let mx = NaN;
+    for (let j = Math.max(0, i - WINDOW); j <= i; j++) {
+      const v = thermal[j];
+      if (Number.isFinite(v) && (!Number.isFinite(mx) || v > mx)) mx = v;
+    }
+    avail[i] = mx;
+  }
+  const finiteThermal = thermal.filter(Number.isFinite);
+  const peak7d = finiteThermal.length ? Math.max(...finiteThermal) : 0;
+  const availNow = [...avail].reverse().find(Number.isFinite) ?? 0;
+  const hasThermal = peak7d > 250;
+  const utilisation = t.map((_, i) =>
+    hasThermal && Number.isFinite(avail[i]) && avail[i]! > 1 ? residual[i] / avail[i]! : NaN,
+  );
+  const utilFit = hasThermal ? ols(utilisation, priceAUD) : null;
+  const residFit = ols(residual, priceAUD);
+  const useUtil = utilFit !== null && utilFit.r2 >= residFit.r2;
+  const priceFit = useUtil ? utilFit! : residFit;
 
   const fit: RegionFitInfo = {
     corr: {
@@ -109,10 +137,21 @@ export function fitAndProject(
       wind: stdDev(windMW.filter(Number.isFinite)),
       solar: stdDev(solarMW.filter(Number.isFinite)),
     },
-    priceModel: { a: priceFit.intercept, b: priceFit.slope, r2: priceFit.r2, sigma: priceFit.sigma },
+    priceModel: {
+      a: priceFit.intercept,
+      b: priceFit.slope,
+      r2: priceFit.r2,
+      sigma: priceFit.sigma,
+      basis: useUtil ? "utilisation" : "residual",
+    },
     demandModel: { r2: demandFit.r2, coolPerDeg: demandFit.b1, heatPerDeg: demandFit.b2 },
     windModel: { r2: windFit.r2 },
     solarModel: { r2: solarFit.r2 },
+    outage: {
+      availNowMW: Math.round(availNow),
+      peak7dMW: Math.round(peak7d),
+      impliedOutMW: Math.round(Math.max(peak7d - availNow, 0)),
+    },
   };
 
   // --- PROJECT -----------------------------------------------------------
@@ -150,7 +189,8 @@ export function fitAndProject(
         demandFit.b2 * Math.max(15 - temp, 0),
       0,
     );
-    const p = priceFit.intercept + priceFit.slope * (d - w - s);
+    const x = useUtil ? (d - w - s) / Math.max(availNow, 1) : d - w - s;
+    const p = priceFit.intercept + priceFit.slope * x;
     const pc = Math.min(Math.max(p, -150), 2000);
     windHat.push(Math.round(w));
     solarHat.push(Math.round(s));

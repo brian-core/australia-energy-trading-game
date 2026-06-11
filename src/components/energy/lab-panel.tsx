@@ -18,6 +18,7 @@ import {
 } from "@/lib/energy/forecast";
 import type { HistoryPayload, PricePoint } from "@/lib/energy/history";
 import { priceColor } from "@/lib/energy/pricing";
+import type { MacroPayload } from "@/lib/energy/macro";
 import type { SeriesPayload } from "@/lib/energy/series";
 import type { WeatherPayload } from "@/lib/energy/weather";
 import PriceChart from "./price-chart";
@@ -39,6 +40,7 @@ const REGION_CODES = ["NSW1", "QLD1", "VIC1", "SA1", "TAS1", "WEM"];
 export default function LabPanel() {
   const [series, setSeries] = useState<SeriesPayload | null>(null);
   const [weather, setWeather] = useState<WeatherPayload | null>(null);
+  const [macro, setMacro] = useState<MacroPayload | null>(null);
   const [error, setError] = useState(false);
   const [region, setRegion] = useState("NSW1");
   const [horizon, setHorizon] = useState<24 | 48 | 72>(48);
@@ -55,13 +57,15 @@ export default function LabPanel() {
     let cancelled = false;
     void (async () => {
       try {
-        const [s, w] = await Promise.all([
+        const [s, w, m] = await Promise.all([
           fetch("/api/energy/series").then((r) => r.json() as Promise<SeriesPayload>),
           fetch("/api/energy/weather").then((r) => r.json() as Promise<WeatherPayload>),
+          fetch("/api/energy/macro").then((r) => r.json() as Promise<MacroPayload>).catch(() => null),
         ]);
         if (!cancelled) {
           setSeries(s);
           setWeather(w);
+          setMacro(m);
         }
       } catch {
         if (!cancelled) setError(true);
@@ -223,12 +227,92 @@ export default function LabPanel() {
           </div>
         </div>
         <div className="mt-2 border-t pt-1.5 text-[9px] leading-relaxed text-[var(--ink-soft)]" style={{ borderColor: "var(--edge)" }}>
-          fitted models: price = {fmt(fit.priceModel.a)} + {fmt(fit.priceModel.b, 3)}×residual-demand
-          (R² {fmt(fit.priceModel.r2, 2)}) · demand R² {fmt(fit.demandModel.r2, 2)} (+
+          fitted models: price ~ {fit.priceModel.basis === "utilisation" ? "thermal utilisation" : "residual demand"}
+          {" "}(R² {fmt(fit.priceModel.r2, 2)}) · demand R² {fmt(fit.demandModel.r2, 2)} (+
           {fmt(fit.demandModel.coolPerDeg)} MW/°C cooling) · wind R² {fmt(fit.windModel.r2, 2)} ·
           solar R² {fmt(fit.solarModel.r2, 2)}
         </div>
       </div>
+
+      {/* Outage watch */}
+      {fit.outage.peak7dMW > 250 && (
+        <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-[10px] tracking-widest text-[var(--ink-soft)]">
+              OUTAGE WATCH — THERMAL FLEET
+            </span>
+            {fit.outage.impliedOutMW > fit.outage.peak7dMW * 0.08 ? (
+              <span className="rounded px-1.5 py-0.5 text-[9px] tracking-widest" style={{ background: "#e2483d", color: "#0b0d11" }}>
+                CAPACITY DOWN
+              </span>
+            ) : (
+              <span className="text-[9px] tracking-widest" style={{ color: "var(--gen)" }}>NORMAL</span>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-[10px]">
+            <div>
+              <div className="text-sm">{(fit.outage.availNowMW / 1000).toFixed(1)} GW</div>
+              <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">AVAILABLE NOW</div>
+            </div>
+            <div>
+              <div className="text-sm">{(fit.outage.peak7dMW / 1000).toFixed(1)} GW</div>
+              <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">7-DAY PEAK</div>
+            </div>
+            <div>
+              <div className="text-sm" style={{ color: fit.outage.impliedOutMW > fit.outage.peak7dMW * 0.08 ? "#e2483d" : "var(--ink)" }}>
+                {fit.outage.impliedOutMW} MW
+              </div>
+              <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">IMPLIED OFFLINE</div>
+            </div>
+          </div>
+          <div className="mt-1.5 text-[9px] leading-snug text-[var(--ink-soft)]">
+            availability = rolling 48h max of coal+gas output. Lost capacity feeds straight into
+            the price model{fit.priceModel.basis === "utilisation" ? " (active)" : ""} — today&apos;s trip raises the whole forward curve.
+          </div>
+        </div>
+      )}
+
+      {/* Macro context */}
+      {macro && (
+        <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
+          <div className="mb-1 text-[10px] tracking-widest text-[var(--ink-soft)]">MACRO CONTEXT</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
+            <div className="flex justify-between">
+              <span className="text-[var(--ink-soft)]">AUD/USD {macro.fx.live ? "· live" : "· ref"}</span>
+              <span>{macro.fx.audUsd.toFixed(4)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[var(--ink-soft)]">AUD/EUR</span>
+              <span>{macro.fx.audEur.toFixed(4)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[var(--ink-soft)]">CPI yoy {macro.cpi.live ? "· ABS" : "· ref"}</span>
+              <span>{macro.cpi.yoyPct.toFixed(1)}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[var(--ink-soft)]">coal (NEWC) · ref</span>
+              <span>US${macro.fuels.newcastleCoalUsdT}/t</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[var(--ink-soft)]">gas (east coast) · ref</span>
+              <span>A${macro.fuels.eastCoastGasAudGj}/GJ</span>
+            </div>
+            {macro.fx.trend.length > 3 && (
+              <div className="flex justify-between">
+                <span className="text-[var(--ink-soft)]">AUD/USD 90d</span>
+                <span style={{ color: macro.fx.trend[macro.fx.trend.length - 1][1] >= macro.fx.trend[0][1] ? "var(--gen)" : "#e2483d" }}>
+                  {(((macro.fx.trend[macro.fx.trend.length - 1][1] / macro.fx.trend[0][1]) - 1) * 100).toFixed(1)}%
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="mt-1.5 text-[9px] leading-snug text-[var(--ink-soft)]">
+            fuel costs and FX set the price level over weeks (they shift coal/gas marginal cost in
+            AUD); weather and outages drive the 72h curve. Reference values are maintained, not
+            live — labelled accordingly.
+          </div>
+        </div>
+      )}
 
       {/* Time travel */}
       <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
