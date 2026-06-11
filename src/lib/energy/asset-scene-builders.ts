@@ -47,13 +47,13 @@ const C = {
   steelDark: 0x7e8a93,
   concrete: 0xd2d4cd,
   hall: 0x97a1a8,
-  road: 0x34383d,
-  gravel: 0x9a958a,
+  road: 0x3c4046,
+  gravel: 0xb0a78f,
   dirt: 0x7a6a4e,
-  grass: 0x5d7a40,
-  scrub: 0x77834d,
-  desert: 0xa08a5e,
-  water: 0x2d7fa6,
+  grass: 0x55963c,
+  scrub: 0x8aa14e,
+  desert: 0xc4a35a,
+  water: 0x2b8fc4,
   fence: 0xa8aeb4,
   glassGlow: 0xffe9b8,
   red: 0xc7402e,
@@ -65,7 +65,7 @@ function hash01(n: number): number {
 }
 
 const mat = (color: number | string, opts: Partial<THREE.MeshLambertMaterialParameters> = {}) =>
-  new THREE.MeshLambertMaterial({ color, ...opts });
+  new THREE.MeshLambertMaterial({ color, flatShading: true, ...opts });
 
 function box(
   w: number,

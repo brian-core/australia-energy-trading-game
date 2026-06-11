@@ -94,26 +94,34 @@ export default function AssetScene({
     const mount = mountRef.current;
     if (!mount) return;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(mount.clientWidth, mount.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Retro pixel look: render small, upscale with nearest-neighbour.
+    const PIXEL_SCALE = 0.32;
+    const renderer = new THREE.WebGLRenderer({ antialias: false });
+    renderer.setSize(
+      Math.round(mount.clientWidth * PIXEL_SCALE),
+      Math.round(mount.clientHeight * PIXEL_SCALE),
+      false,
+    );
+    renderer.domElement.style.width = "100%";
+    renderer.domElement.style.height = "100%";
+    renderer.domElement.style.imageRendering = "pixelated";
     mount.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
     // Day/night sky from AEST-ish local time.
     const h = (new Date().getUTCHours() + 10) % 24;
     const daylight = Math.max(Math.sin((Math.PI * (h - 6)) / 13), 0.22);
-    const sky = new THREE.Color(0x0c1322).lerp(new THREE.Color(0x9fc1d8), Math.max(daylight - 0.22, 0) / 0.78);
+    const sky = new THREE.Color(0x0c1322).lerp(new THREE.Color(0x8ecdf0), Math.max(daylight - 0.22, 0) / 0.78);
     scene.background = sky;
     scene.fog = new THREE.Fog(sky, 140, 480);
 
-    const camera = new THREE.PerspectiveCamera(50, mount.clientWidth / mount.clientHeight, 0.1, 900);
-    const CAM_HIGH = new THREE.Vector3(2, 240, 10);
-    const CAM_REST = new THREE.Vector3(46, 32, 58);
+    const camera = new THREE.PerspectiveCamera(27, mount.clientWidth / mount.clientHeight, 0.1, 1400);
+    const CAM_HIGH = new THREE.Vector3(4, 420, 16);
+    const CAM_REST = new THREE.Vector3(86, 58, 108);
     camera.position.copy(CAM_HIGH);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 5, 0);
-    controls.maxDistance = 220;
+    controls.maxDistance = 320;
     controls.minDistance = 8;
     controls.maxPolarAngle = Math.PI / 2.05;
     controls.enableDamping = true;
@@ -259,7 +267,11 @@ export default function AssetScene({
     const onResize = () => {
       camera.aspect = mount.clientWidth / mount.clientHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize(mount.clientWidth, mount.clientHeight);
+      renderer.setSize(
+        Math.round(mount.clientWidth * PIXEL_SCALE),
+        Math.round(mount.clientHeight * PIXEL_SCALE),
+        false,
+      );
     };
     window.addEventListener("resize", onResize);
 
