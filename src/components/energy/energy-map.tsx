@@ -608,6 +608,18 @@ export default function EnergyMap() {
           facility={siteFacility}
           game={game}
           spotAUD={live?.regions.find((r) => r.code === siteFacility.region)?.priceAUD ?? null}
+          estLiveMW={(() => {
+            // Estimate this site's live output: regional fuel-tech generation
+            // split by capacity share among same-fuel facilities.
+            const region = live?.regions.find((r) => r.code === siteFacility.region);
+            const slice = region?.fuelMix.find((f) => f.tech === siteFacility.fuel);
+            const peers = facilities?.facilities.filter(
+              (f) => f.region === siteFacility.region && f.fuel === siteFacility.fuel,
+            );
+            const capSum = peers?.reduce((sum, f) => sum + f.capacityMW, 0) ?? 0;
+            if (!slice || capSum <= 0) return null;
+            return (slice.mw * siteFacility.capacityMW) / capSum;
+          })()}
           onClose={exitSite}
         />
       )}

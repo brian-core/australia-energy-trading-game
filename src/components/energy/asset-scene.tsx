@@ -30,11 +30,14 @@ export default function AssetScene({
   facility,
   game,
   spotAUD,
+  estLiveMW,
   onClose,
 }: {
   facility: Facility;
   game: GameApi;
   spotAUD: number | null;
+  /** Estimated real-world output right now (regional fuel-tech share). */
+  estLiveMW?: number | null;
   onClose: () => void;
 }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -51,6 +54,10 @@ export default function AssetScene({
     xrayRef.current = xray;
   }, [xray]);
   const [selected, setSelected] = useState<string | null>(null);
+  const selectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
   const builtRef = useRef<BuiltAsset | null>(null);
 
   const owned: OwnedAsset | undefined = game.state.fleet.find((a) => a.id === facility.name);
@@ -66,9 +73,13 @@ export default function AssetScene({
     conditionsRef.current = conditions;
   }, [conditions]);
 
+  // Owned sites animate with the game's output; unowned sites animate with
+  // the grid's real intensity when we can estimate it.
   const outputFactor = owned
     ? assetOutputMW(owned, game.now) / Math.max(facility.capacityMW, 1)
-    : CF_BY_FUEL[facility.fuel] * 0.9;
+    : estLiveMW != null
+      ? Math.min(Math.max(estLiveMW / Math.max(facility.capacityMW, 1), 0), 1)
+      : CF_BY_FUEL[facility.fuel] * 0.9;
   const outputRef = useRef(outputFactor);
   useEffect(() => {
     outputRef.current = outputFactor;
@@ -177,6 +188,29 @@ export default function AssetScene({
     });
     scene.add(built.root);
 
+    // Floating markers over each clickable component: bobbing diamonds,
+    // coloured by live condition, pulsing when selected. They make the
+    // interactive parts discoverable and double as health pins.
+    const markers: Array<{
+      mesh: THREE.Mesh;
+      mat: THREE.MeshLambertMaterial;
+      taskId: string;
+      baseY: number;
+      phase: number;
+    }> = [];
+    built.components.forEach((comp, i) => {
+      const bb = new THREE.Box3().setFromObject(comp.group);
+      if (bb.isEmpty()) return;
+      const center = bb.getCenter(new THREE.Vector3());
+      const mmat = new THREE.MeshLambertMaterial({ color: 0x48a87c, emissive: 0x1c4a38 });
+      const marker = new THREE.Mesh(new THREE.OctahedronGeometry(1.2), mmat);
+      const baseY = bb.max.y + 3.4;
+      marker.position.set(center.x, baseY, center.z);
+      marker.userData.taskId = comp.taskId;
+      scene.add(marker);
+      markers.push({ mesh: marker, mat: mmat, taskId: comp.taskId, baseY, phase: i * 1.7 });
+    });
+
     // Maintenance crew rig: hi-vis ute with a flashing beacon; cones and
     // workers appear once it arrives at the work site.
     const rig = new THREE.Group();
@@ -226,22 +260,32 @@ export default function AssetScene({
     const onDown = () => {
       downAt = Date.now();
     };
+    const pickTask = (clientX: number, clientY: number): string | null => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+      const hitMarker = raycaster.intersectObjects(
+        markers.map((m) => m.mesh),
+        false,
+      )[0];
+      if (hitMarker) return hitMarker.object.userData.taskId as string;
+      for (const comp of built.components) {
+        if (raycaster.intersectObject(comp.group, true).length > 0) return comp.taskId;
+      }
+      return null;
+    };
     const onUp = (e: PointerEvent) => {
       if (Date.now() - downAt > 250) return; // drag, not click
-      const rect = renderer.domElement.getBoundingClientRect();
-      pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(pointer, camera);
-      for (const comp of built.components) {
-        if (raycaster.intersectObject(comp.group, true).length > 0) {
-          setSelected(comp.taskId);
-          return;
-        }
-      }
-      setSelected(null);
+      setSelected(pickTask(e.clientX, e.clientY));
+    };
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") return;
+      renderer.domElement.style.cursor = pickTask(e.clientX, e.clientY) ? "pointer" : "grab";
     };
     renderer.domElement.addEventListener("pointerdown", onDown);
     renderer.domElement.addEventListener("pointerup", onUp);
+    renderer.domElement.addEventListener("pointermove", onMove);
 
     let raf = 0;
     const t0 = performance.now();
@@ -294,6 +338,16 @@ export default function AssetScene({
         rig.visible = false;
       }
       built.tick(t, outputRef.current, conditionsRef.current, activeJob);
+      for (const mk of markers) {
+        mk.mesh.position.y = mk.baseY + Math.sin(t * 2 + mk.phase) * 0.5;
+        mk.mesh.rotation.y = t * 0.9 + mk.phase;
+        const cond = conditionsRef.current[mk.taskId] ?? 100;
+        mk.mat.color.setHex(condColorHex(cond));
+        const isSel = selectedRef.current === mk.taskId;
+        const pulse = isSel ? 1.25 + 0.15 * Math.sin(t * 6) : 1;
+        mk.mesh.scale.setScalar(pulse);
+        mk.mat.emissive.setHex(isSel ? 0x3a6a55 : 0x223a30);
+      }
       // Status materials track live condition; shells fade in X-ray mode.
       for (const comp of built.components) {
         comp.statusMat.color.setHex(condColorHex(conditionsRef.current[comp.taskId] ?? 100));
@@ -327,6 +381,7 @@ export default function AssetScene({
       window.removeEventListener("resize", onResize);
       renderer.domElement.removeEventListener("pointerdown", onDown);
       renderer.domElement.removeEventListener("pointerup", onUp);
+      renderer.domElement.removeEventListener("pointermove", onMove);
       controls.dispose();
       renderer.dispose();
       mount.removeChild(renderer.domElement);
@@ -397,6 +452,12 @@ export default function AssetScene({
           {FUEL_META[facility.fuel].label} · {facility.capacityMW} MW registered
           {facility.owner && <> · {facility.owner}</>}
         </div>
+        {estLiveMW != null && (
+          <div className="mt-1 text-[10px] text-[var(--ink-soft)]">
+            grid right now: ≈<span className="text-[var(--ink)]">{Math.round(estLiveMW)} MW</span>{" "}
+            from this site <span className="opacity-60">(est. by regional fuel share)</span>
+          </div>
+        )}
         <div className="mt-1.5 text-[10px] text-[var(--ink-soft)]">
           sending out <span className="text-[var(--ink)]">{outMW} MW</span>
           {spotAUD != null && (
