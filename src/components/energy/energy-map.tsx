@@ -416,27 +416,25 @@ export default function EnergyMap() {
         className="absolute left-4 top-4 w-[300px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border p-4 backdrop-blur hud-scroll max-md:max-h-[55vh] md:max-h-[calc(100vh-2rem)] md:w-[330px]"
         style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
       >
-        <div className="flex items-start justify-between gap-2">
-          <h1 className="text-lg font-semibold leading-tight">Australia Live Grid</h1>
-          <div
-            className="flex overflow-hidden rounded-md border font-[family-name:var(--f-mono)] text-[10px] tracking-widest"
-            style={{ borderColor: "var(--edge)" }}
-          >
-            {(["power", "price", "desk", "build", "ops"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setTab(m)}
-                className="px-2 py-1 uppercase"
-                style={
-                  tab === m
-                    ? { background: "var(--gen)", color: "#0b0d11" }
-                    : { color: "var(--ink-soft)" }
-                }
-              >
-                {m}
-              </button>
-            ))}
-          </div>
+        <h1 className="text-lg font-semibold leading-tight">Australia Live Grid</h1>
+        <div
+          className="mt-2 flex w-fit overflow-hidden rounded-md border font-[family-name:var(--f-mono)] text-[10px] tracking-widest"
+          style={{ borderColor: "var(--edge)" }}
+        >
+          {(["power", "price", "desk", "build", "ops"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setTab(m)}
+              className="px-2 py-1 uppercase"
+              style={
+                tab === m
+                  ? { background: "var(--gen)", color: "#0b0d11" }
+                  : { color: "var(--ink-soft)" }
+              }
+            >
+              {m}
+            </button>
+          ))}
         </div>
         <div className="mt-1">
           <StatusChip live={live} stale={stale} />
