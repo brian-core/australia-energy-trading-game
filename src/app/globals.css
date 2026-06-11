@@ -19,6 +19,7 @@ body {
 }
 
 body {
+    touch-action: manipulation; /* no double-tap zoom on game UI */
     background: var(--bg);
     color: var(--ink);
     font-family: var(--f-sans);

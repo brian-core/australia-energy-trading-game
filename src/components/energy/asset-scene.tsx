@@ -364,7 +364,7 @@ export default function AssetScene({
       <div ref={mountRef} className="absolute inset-0" />
 
       {/* Top bar */}
-      <div className="absolute left-4 top-4 flex items-center gap-3">
+      <div className="absolute left-4 top-4 flex items-center gap-3 max-md:left-2 max-md:top-2 max-md:gap-1.5">
         <button
           onClick={close}
           className="rounded-lg border px-3 py-1.5 text-[10px] tracking-widest text-[var(--ink-soft)] backdrop-blur hover:text-[var(--ink)]"
@@ -387,7 +387,7 @@ export default function AssetScene({
 
       {/* Asset header */}
       <div
-        className="absolute right-4 top-4 w-[280px] rounded-xl border p-3 backdrop-blur"
+        className="absolute right-4 top-4 w-[280px] rounded-xl border p-3 backdrop-blur max-md:left-2 max-md:right-2 max-md:top-12 max-md:w-auto"
         style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
       >
         <div className="text-sm font-semibold">
@@ -477,7 +477,7 @@ export default function AssetScene({
       {/* Hint */}
       {!selectedTask && (
         <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 text-[10px] tracking-widest text-[var(--ink-soft)]">
-          DRAG TO ORBIT · SCROLL TO ZOOM · CLICK A COMPONENT TO INSPECT
+          DRAG TO ORBIT · SCROLL OR PINCH TO ZOOM · TAP A COMPONENT TO INSPECT
         </div>
       )}
     </div>

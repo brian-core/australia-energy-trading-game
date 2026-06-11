@@ -88,7 +88,7 @@ function RegionCard({
   return (
     <button
       onClick={onSelect}
-      className="w-full shrink-0 rounded-lg border p-3 text-left transition-colors max-md:w-64"
+      className="w-full shrink-0 rounded-lg border p-3 text-left transition-colors"
       style={{
         background: "var(--panel)",
         borderColor: selected ? "var(--gen)" : "var(--edge)",
@@ -291,6 +291,8 @@ export default function EnergyMap() {
   const [stale, setStale] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<ViewTab>("power");
+  // Mobile: the HUD lives in a bottom sheet; collapsed shows just header+tabs.
+  const [sheetOpen, setSheetOpen] = useState(false);
   // The desk reads best against the price map.
   const mode: MapMode = tab === "power" ? "power" : "price";
 
@@ -414,43 +416,76 @@ export default function EnergyMap() {
         />
       )}
 
-      {/* Top-left: title + national stats / trading desk */}
+      {/* HUD panel: floating card on desktop, bottom sheet on mobile */}
       <div
-        className="absolute left-4 top-4 w-[300px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border p-4 backdrop-blur hud-scroll max-md:max-h-[55vh] md:max-h-[calc(100vh-2rem)] md:w-[330px]"
+        className="absolute z-10 flex flex-col rounded-xl border backdrop-blur max-md:inset-x-0 max-md:bottom-0 max-md:max-h-[80dvh] max-md:rounded-b-none max-md:border-b-0 md:left-4 md:top-4 md:w-[330px] md:max-h-[calc(100vh-2rem)]"
         style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
       >
-        <h1 className="text-lg font-semibold leading-tight">Australia Live Grid</h1>
         <div
-          className="mt-2 flex w-fit overflow-hidden rounded-md border font-[family-name:var(--f-mono)] text-[10px] tracking-widest"
-          style={{ borderColor: "var(--edge)" }}
+          className="shrink-0 cursor-pointer p-4 pb-2 md:cursor-default"
+          onClick={() => setSheetOpen((o) => !o)}
         >
-          {(["power", "price", "desk", "build", "ops"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setTab(m)}
-              className="px-2 py-1 uppercase"
-              style={
-                tab === m
-                  ? { background: "var(--gen)", color: "#0b0d11" }
-                  : { color: "var(--ink-soft)" }
-              }
-            >
-              {m}
-            </button>
-          ))}
+          <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-white/25 md:hidden" />
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="text-lg font-semibold leading-tight">Australia Live Grid</h1>
+            <span className="font-[family-name:var(--f-mono)] text-[10px] text-[var(--ink-soft)] md:hidden">
+              {sheetOpen ? "▼" : "▲"}
+            </span>
+          </div>
+          <div
+            className="mt-2 flex w-fit overflow-hidden rounded-md border font-[family-name:var(--f-mono)] text-[10px] tracking-widest"
+            style={{ borderColor: "var(--edge)" }}
+          >
+            {(["power", "price", "desk", "build", "ops"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTab(m);
+                  setSheetOpen(true);
+                }}
+                className="px-2 py-1.5 uppercase"
+                style={
+                  tab === m
+                    ? { background: "var(--gen)", color: "#0b0d11" }
+                    : { color: "var(--ink-soft)" }
+                }
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            <StatusChip live={live} stale={stale} />
+            <span className="flex items-center gap-1.5">
+              {selected && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelected(null);
+                  }}
+                  className="rounded border px-1.5 py-0.5 font-[family-name:var(--f-mono)] text-[9px] tracking-widest text-[var(--ink-soft)] md:hidden"
+                  style={{ borderColor: "var(--edge)" }}
+                >
+                  ⤺ RESET
+                </button>
+              )}
+              {cloudEnabled() && !session && (
+                <Link
+                  href="/login"
+                  onClick={(e) => e.stopPropagation()}
+                  className="rounded border px-1.5 py-0.5 font-[family-name:var(--f-mono)] text-[9px] tracking-widest text-[var(--gen)]"
+                  style={{ borderColor: "var(--edge)" }}
+                >
+                  SIGN IN
+                </Link>
+              )}
+            </span>
+          </div>
         </div>
-        <div className="mt-1 flex items-center justify-between gap-2">
-          <StatusChip live={live} stale={stale} />
-          {cloudEnabled() && !session && (
-            <Link
-              href="/login"
-              className="rounded border px-1.5 py-0.5 font-[family-name:var(--f-mono)] text-[9px] tracking-widest text-[var(--gen)]"
-              style={{ borderColor: "var(--edge)" }}
-            >
-              SIGN IN
-            </Link>
-          )}
-        </div>
+        <div
+          className={`min-h-0 overflow-y-auto px-4 pb-4 hud-scroll ${sheetOpen ? "" : "max-md:hidden"}`}
+        >
         {live && tab === "desk" && (
           <div className="mt-3">
             <DeskPanel live={live} />
@@ -523,12 +558,23 @@ export default function EnergyMap() {
                 regions={live.regions}
               />
             )}
+            <div className="mt-3 space-y-2 md:hidden">
+              {live.regions.map((region) => (
+                <RegionCard
+                  key={region.code}
+                  region={region}
+                  selected={selected === region.code}
+                  onSelect={() => setSelected(selected === region.code ? null : region.code)}
+                />
+              ))}
+            </div>
           </>
         )}
+        </div>
       </div>
 
-      {/* Region cards: right rail on desktop, bottom strip on mobile */}
-      <div className="absolute flex gap-2 max-md:bottom-3 max-md:left-3 max-md:right-3 max-md:flex-row max-md:overflow-x-auto md:right-4 md:top-4 md:bottom-4 md:w-72 md:flex-col md:overflow-y-auto hud-scroll">
+      {/* Region cards: right rail, desktop only (mobile gets them in the sheet) */}
+      <div className="absolute hidden gap-2 hud-scroll md:right-4 md:top-4 md:bottom-4 md:flex md:w-72 md:flex-col md:overflow-y-auto">
         {(live?.regions ?? []).map((region) => (
           <RegionCard
             key={region.code}

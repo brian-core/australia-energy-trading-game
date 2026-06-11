@@ -53,7 +53,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function Landing() {
   return (
-    <main className="h-screen overflow-y-auto" style={{ background: "var(--bg)", color: "var(--ink)" }}>
+    <main className="h-dvh overflow-y-auto" style={{ background: "var(--bg)", color: "var(--ink)" }}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
 
       {/* Hero */}
