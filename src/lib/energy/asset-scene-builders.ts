@@ -607,89 +607,116 @@ function buildCoal(capacityMW: number): BuiltAsset {
   const coalstock = makeComponent("coalstock", "Coal stockyard & conveyor", false);
   const mech = makeComponent("mech", "Boiler & turbine hall", true);
 
-  root.add(makeTerrain(C.scrub));
-  root.add(makeTrees(18, 120, 210, 27));
-  root.add(makePad(86, 60));
-  root.add(makeRoad(33));
+  // Everything scales with capacity so Eraring dwarfs a 300 MW plant.
+  const nUnits = Math.max(1, Math.min(4, Math.round(capacityMW / 700)));
+  const nTowers = Math.max(1, Math.min(4, Math.round(capacityMW / 800)));
+  const nPiles = Math.max(2, Math.min(5, Math.round(capacityMW / 600) + 1));
+  const hallW = 18 + nUnits * 5;
+  const boilerH = 13 + nUnits * 2;
+  const padW = 70 + nUnits * 10 + nTowers * 6;
 
-  const hall = box(26, 11, 14, mat(C.hall), -8, null, 2);
+  root.add(makeTerrain(C.scrub));
+  root.add(makeTrees(18, padW * 1.6, 210, 27));
+  root.add(makePad(padW, 64));
+  root.add(makeRoad(35));
+
+  const hall = box(hallW, 9 + nUnits, 14, mat(C.hall), -10, null, 2);
   shells.push(hall);
   root.add(hall);
-  const ridge = box(26.6, 1, 6, C.concrete, -8, 11.4, 2);
+  const ridge = box(hallW + 0.6, 1, 6, C.concrete, -10, 9.4 + nUnits, 2);
   shells.push(ridge);
   root.add(ridge);
-  root.add(box(24, 1.2, 0.1, mat(C.glassGlow, { emissive: 0x6b5a28 }), -8, 7.4, 9.1));
-  const boiler = box(13, 17, 12, mat(C.steelDark), 9, null, 0);
+  root.add(box(hallW - 2, 1.2, 0.1, mat(C.glassGlow, { emissive: 0x6b5a28 }), -10, 6.4, 9.1));
+  const boilerX = hallW / 2 - 4;
+  const boiler = box(12 + nUnits * 2, boilerH, 12, mat(C.steelDark), boilerX, null, 0);
   shells.push(boiler);
   root.add(boiler);
-  for (let i = 0; i < 4; i++) root.add(cyl(0.35, 0.35, 16, mat(C.steel), 15.8, null, -4 + i * 2.6, 8));
+  for (let i = 0; i < 4; i++)
+    root.add(cyl(0.35, 0.35, boilerH - 1, mat(C.steel), boilerX + 6 + nUnits, null, -4 + i * 2.6, 8));
 
-  const nUnits = Math.max(2, Math.min(4, Math.round(capacityMW / 700)));
   const gens: THREE.Mesh[] = [];
   for (let i = 0; i < nUnits; i++) {
     const gen = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 5.5, 12), mech.statusMat);
     gen.rotation.z = Math.PI / 2;
-    gen.position.set(i * 6 - 8 - (nUnits - 1) * 3 + 3, 3.6, 2);
+    gen.position.set(i * 7 - 10 - (nUnits - 1) * 3.5, 3.6, 2);
     gens.push(gen);
     mech.group.add(gen);
   }
 
   const steam: THREE.Mesh[] = [];
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < nTowers; i++) {
+    const tx = i * 16 - padW / 2 + 12;
     const tower = new THREE.Mesh(
       new THREE.CylinderGeometry(5.4, 7.6, 19, 18, 1, true),
       mat(0xd6d9d2, { side: THREE.DoubleSide }),
     );
-    tower.position.set(i * 17 - 33, 9.5, -12);
+    tower.position.set(tx, 9.5, -14);
     shells.push(tower);
     root.add(tower);
-    for (let s = 0; s < 5; s++) {
+    for (let p = 0; p < 5; p++) {
       const puff = new THREE.Mesh(
-        new THREE.SphereGeometry(2.4 + s * 0.8, 8, 8),
+        new THREE.SphereGeometry(2.4 + p * 0.8, 8, 8),
         mat(0xeef1ec, { transparent: true, opacity: 0.3 }),
       );
-      puff.position.set(i * 17 - 33, 19 + s * 3.4, -12);
-      puff.userData.base = 19 + s * 3.4;
+      puff.position.set(tx, 19 + p * 3.4, -14);
+      puff.userData.base = 19 + p * 3.4;
+      puff.userData.phase = hash01(i * 7 + p) * 7;
       steam.push(puff);
       root.add(puff);
     }
   }
-  const chimney = cyl(1.1, 1.7, 30, mat(0xd8d2c6), 17, null, -8, 12);
+  const chimX = boilerX + 9 + nUnits;
+  const chimney = cyl(1.1, 1.7, 28 + nUnits * 2, mat(0xd8d2c6), chimX, null, -8, 12);
   shells.push(chimney);
   root.add(chimney);
-  root.add(cyl(1.18, 1.25, 2.2, mat(C.red), 17, 27, -8, 12));
-  root.add(makeBeacon(17, 30.8, -8, beacons));
+  root.add(cyl(1.18, 1.25, 2.2, mat(C.red), chimX, 25 + nUnits * 2, -8, 12));
+  root.add(makeBeacon(chimX, 28.8 + nUnits * 2, -8, beacons));
 
+  // Stockyard scaled to capacity.
   const pileMat = mat(0x1f2227);
   const piles: THREE.Mesh[] = [];
-  for (let i = 0; i < 3; i++) {
-    const pile = new THREE.Mesh(new THREE.ConeGeometry(5.5 - i, 4.4 - i * 0.7, 12), pileMat);
-    pile.position.set(i * 12 - 10, (4.4 - i * 0.7) / 2, 22);
+  for (let i = 0; i < nPiles; i++) {
+    const r = 6.5 - i * 0.7;
+    const ph = 5.2 - i * 0.5;
+    const pile = new THREE.Mesh(new THREE.ConeGeometry(r, ph, 12), pileMat);
+    pile.position.set(i * 11 - (nPiles - 1) * 5.5 - 6, ph / 2, 23);
+    pile.userData.h = ph;
     piles.push(pile);
     coalstock.group.add(pile);
   }
-  const gallery = box(26, 1.6, 2, mat(C.steel), 2, null, 14);
-  gallery.rotation.z = 0.32;
-  gallery.position.set(2, 8, 12);
+  // Inclined conveyor: a single gallery from the first pile up to the boiler
+  // top, with trestle legs that actually meet it.
+  const cStart = new THREE.Vector3(-10, 2.5, 21);
+  const cEnd = new THREE.Vector3(boilerX - 2, boilerH - 1, 1);
+  const cDir = cEnd.clone().sub(cStart);
+  const gallery = box(cDir.length() + 2, 1.5, 2.2, mat(C.steel));
+  gallery.position.copy(cStart.clone().add(cEnd).multiplyScalar(0.5));
+  gallery.lookAt(cEnd);
+  gallery.rotateY(Math.PI / 2);
   coalstock.group.add(gallery);
-  for (let i = 0; i < 4; i++) {
-    coalstock.group.add(box(0.4, 6 + i * 1.6, 0.4, C.steelDark, -6 + i * 5.4, null, 12.5));
+  for (const f of [0.25, 0.5, 0.75]) {
+    const px = cStart.clone().lerp(cEnd, f);
+    coalstock.group.add(box(0.5, px.y, 0.5, C.steelDark, px.x, px.y / 2, px.z));
   }
   const lamp = statusLamp();
   coalstock.statusMat = lamp.mat;
-  lamp.mesh.position.set(-10, 7.6, 22);
+  lamp.mesh.position.set(-12, 8.4, 23);
   coalstock.group.add(lamp.mesh);
-  for (const dz of [-0.9, 0.9]) coalstock.group.add(box(70, 0.12, 0.22, mat(0x55595e), 0, 0.2, 29 + dz));
-  for (let i = 0; i < 4; i++) {
-    coalstock.group.add(box(5.4, 1.7, 2.1, mat(0x5a3b2e), i * 6.4 - 12, 0.9, 29));
+  coalstock.group.add(cyl(0.1, 0.12, 8, mat(C.steelDark), -12, null, 23, 6));
+  for (const dz of [-0.9, 0.9])
+    coalstock.group.add(box(padW - 10, 0.12, 0.22, mat(0x55595e), 0, 0.2, 30 + dz));
+  for (let i = 0; i < Math.min(nPiles + 1, 6); i++) {
+    coalstock.group.add(box(5.4, 1.7, 2.1, mat(0x5a3b2e), i * 6.4 - 14, 0.9, 30));
   }
-  coalstock.group.add(makeUte(-22, 16, 0.9));
+  coalstock.group.add(makeUte(-24, 16, 0.9));
 
   const sub = makeSubstation();
-  sub.position.set(-30, 0, 16);
+  sub.position.set(-padW / 2 + 10, 0, 16);
   root.add(sub);
-  root.add(makePowerline(new THREE.Vector3(-30, 0, 30), new THREE.Vector3(-0.2, 0, 1).normalize(), 5));
-  root.add(makeFloodlight(-40, -20), makeFloodlight(28, 18), makeFloodlight(-12, 26));
+  root.add(
+    makePowerline(new THREE.Vector3(-padW / 2 + 10, 0, 30), new THREE.Vector3(-0.2, 0, 1).normalize(), 5),
+  );
+  root.add(makeFloodlight(-padW / 2 + 4, -22), makeFloodlight(padW / 2 - 6, 18), makeFloodlight(-12, 27));
 
   root.add(coalstock.group, mech.group);
   return {
@@ -699,16 +726,14 @@ function buildCoal(capacityMW: number): BuiltAsset {
     tick: (t, out, conditions) => {
       const stock = Math.max((conditions.coalstock ?? 100) / 100, 0.1);
       piles.forEach((pile, i) => {
-        const s = Math.max(stock - i * 0.08, 0.08);
-        pile.scale.set(s, s, s);
-        pile.position.y = ((4.4 - i * 0.7) / 2) * s;
+        const s2 = Math.max(stock - i * 0.06, 0.08);
+        pile.scale.set(s2, s2, s2);
+        pile.position.y = (pile.userData.h / 2) * s2;
       });
       for (const puff of steam) {
-        puff.position.y = puff.userData.base + ((t * (1.6 + out * 2.4)) % 7);
-        (puff.material as THREE.MeshLambertMaterial).opacity = Math.max(
-          0.04,
-          0.34 * out * (1 - (puff.position.y - puff.userData.base) / 8),
-        );
+        const rise = (t * (1.6 + out * 2.4) + puff.userData.phase) % 7;
+        puff.position.y = puff.userData.base + rise;
+        (puff.material as THREE.MeshLambertMaterial).opacity = Math.max(0.04, 0.34 * out * (1 - rise / 8));
       }
       for (const gen of gens) gen.rotation.x += (0.5 + out * 5) * 0.016;
       blinkBeacons(beacons, t);

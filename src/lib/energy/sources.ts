@@ -369,6 +369,20 @@ export async function fetchFacilities(): Promise<{ demo: boolean; facilities: Fa
       .map(parseFacilityFeature)
       .filter((f): f is Facility => f !== null);
     if (facilities.length < 20) throw new Error("facilities feed too sparse");
+    // The register reuses names across technologies (e.g. Broken Hill solar +
+    // battery). Names are identity throughout the app, so make them unique.
+    const counts = new Map<string, number>();
+    for (const f of facilities) counts.set(f.name, (counts.get(f.name) ?? 0) + 1);
+    const seen = new Map<string, number>();
+    for (const f of facilities) {
+      if ((counts.get(f.name) ?? 0) > 1) {
+        const base = f.name;
+        f.name = `${base} (${FUEL_META[f.fuel].label})`;
+        const n = (seen.get(f.name) ?? 0) + 1;
+        seen.set(f.name, n);
+        if (n > 1) f.name = `${base} (${FUEL_META[f.fuel].label} ${n})`;
+      }
+    }
     return { demo: false, facilities };
   } catch {
     return { demo: true, facilities: DEMO_FACILITIES };

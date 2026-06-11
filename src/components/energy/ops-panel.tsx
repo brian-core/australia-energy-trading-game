@@ -211,7 +211,7 @@ export default function OpsPanel({
             const spot = spotByRegion.get(f.region);
             const estPerH = spot != null ? f.capacityMW * CF_BY_FUEL[f.fuel] * spot : null;
             return (
-              <div key={f.name} className="flex items-center justify-between gap-2 text-[10px]">
+              <div key={`${f.name}:${f.lat}:${f.lng}`} className="flex items-center justify-between gap-2 text-[10px]">
                 <span className="truncate">
                   <span style={{ color: FUEL_META[f.fuel].color }}>●</span> {f.name}{" "}
                   <span className="text-[var(--ink-soft)]">
