@@ -35,6 +35,16 @@ If the upstream feeds are unreachable, the app falls back to a built-in demo sna
 
 Not covered: the NT's Darwin–Katherine grid and regional WA systems (no public real-time feed).
 
+## Deploy it (so people can sign up and play)
+
+1. **Push to GitHub** — create an empty repo, then `git remote add origin <url> && git push -u origin main`.
+2. **Vercel** — import the repo at vercel.com; no config needed. Add a custom domain under Settings → Domains.
+3. **Accounts (optional)** — create a free [Supabase](https://supabase.com) project, run `supabase/schema.sql` in the SQL editor, set the project's **Auth → URL Configuration → Site URL** to your deployed URL, and add two env vars in Vercel (then redeploy):
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+   This enables passwordless email sign-up, cross-device cloud saves, and the public leaderboard (the ACCOUNT card appears in OPS automatically). Without these vars the game runs identically with browser-local saves.
+
 ## Run it
 
 ```bash

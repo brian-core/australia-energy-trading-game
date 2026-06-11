@@ -12,6 +12,7 @@ import {
 import { FUEL_META } from "@/lib/energy/regions";
 import { priceColor } from "@/lib/energy/pricing";
 import type { Facility, LivePayload } from "@/lib/energy/types";
+import AccountCard from "./account-card";
 import type { GameApi } from "./use-game";
 
 // OPS view: the asset management game. Buy plants, run maintenance, earn the
@@ -100,6 +101,8 @@ export default function OpsPanel({
           NEW GAME
         </button>
       </div>
+
+      <AccountCard game={game} />
 
       {/* Fleet */}
       {state.fleet.length > 0 && (
