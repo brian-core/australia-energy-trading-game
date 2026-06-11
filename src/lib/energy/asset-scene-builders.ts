@@ -118,31 +118,41 @@ function makeComponent(taskId: string, label: string, interior: boolean): SceneC
   return { taskId, label, group: new THREE.Group(), interior, statusMat: statusLamp().mat };
 }
 
-/** Terrain: big ground disc, tonal patches, gentle perimeter hills. */
-function makeTerrain(groundColor: number, hills = true): THREE.Group {
+/** The world is a square diorama plate: checker-tiled top, earthen sides. */
+export const PLATE = 360;
+const TILE = 6;
+
+function checkerTexture(base: number): THREE.Texture {
+  const a = new THREE.Color(base);
+  const b = new THREE.Color(base).multiplyScalar(0.9);
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 2;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = `#${a.getHexString()}`;
+  ctx.fillRect(0, 0, 2, 2);
+  ctx.fillStyle = `#${b.getHexString()}`;
+  ctx.fillRect(0, 0, 1, 1);
+  ctx.fillRect(1, 1, 1, 1);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(PLATE / TILE / 2, PLATE / TILE / 2);
+  return tex;
+}
+
+function makeTerrain(groundColor: number): THREE.Group {
   const g = new THREE.Group();
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(260, 48), mat(groundColor));
-  ground.rotation.x = -Math.PI / 2;
-  g.add(ground);
-  const patch = mat(new THREE.Color(groundColor).multiplyScalar(0.88).getHex());
-  for (let i = 0; i < 9; i++) {
-    const p = new THREE.Mesh(new THREE.CircleGeometry(10 + hash01(i) * 22, 14), patch);
-    p.rotation.x = -Math.PI / 2;
-    p.position.set((hash01(i + 11) - 0.5) * 360, 0.04, (hash01(i + 23) - 0.5) * 360);
-    g.add(p);
-  }
-  if (hills) {
-    const hillMat = mat(new THREE.Color(groundColor).multiplyScalar(0.75).getHex());
-    for (let i = 0; i < 12; i++) {
-      const r = 16 + hash01(i + 5) * 26;
-      const hill = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), hillMat);
-      const a = (i / 12) * Math.PI * 2 + hash01(i) * 0.5;
-      const d = 190 + hash01(i + 7) * 60;
-      hill.position.set(Math.cos(a) * d, -r * 0.72, Math.sin(a) * d);
-      hill.scale.y = 0.55;
-      g.add(hill);
-    }
-  }
+  const top = new THREE.Mesh(
+    new THREE.PlaneGeometry(PLATE, PLATE),
+    new THREE.MeshLambertMaterial({ color: 0xffffff, map: checkerTexture(groundColor) }),
+  );
+  top.rotation.x = -Math.PI / 2;
+  top.receiveShadow = true;
+  g.add(top);
+  // Earth slab under the tiles — the diorama base.
+  const slab = box(PLATE, 10, PLATE, mat(0x6e553a), 0, -5.06, 0);
+  g.add(slab);
   return g;
 }
 
@@ -172,10 +182,10 @@ function makePad(w: number, d: number): THREE.Group {
 /** Access road from the pad edge off to the horizon, with centre dashes. */
 function makeRoad(startZ: number): THREE.Group {
   const g = new THREE.Group();
-  const len = 240 - startZ;
+  const len = PLATE / 2 - 4 - startZ;
   g.add(box(7, 0.16, len, C.road, 0, null, startZ + len / 2));
   const dash = mat(0xd8d8cf);
-  for (let z = startZ + 4; z < 235; z += 9) {
+  for (let z = startZ + 4; z < PLATE / 2 - 8; z += 9) {
     g.add(box(0.35, 0.18, 3.2, dash, 0, 0.18, z));
   }
   return g;
@@ -246,6 +256,7 @@ function makePowerline(origin: THREE.Vector3, dir: THREE.Vector3, count = 5): TH
 
 function makeTrees(count: number, minR: number, maxR: number, seed = 0): THREE.Group {
   const g = new THREE.Group();
+  maxR = Math.min(maxR, PLATE / 2 - 16);
   const greens = [0x4f7a3a, 0x5d8a44, 0x3f6b31];
   const trunk = mat(0x6b4f35);
   for (let i = 0; i < count; i++) {
@@ -322,12 +333,7 @@ function buildWind(capacityMW: number, offshore: boolean): BuiltAsset {
   const software = makeComponent("software", "Control room & SCADA", false);
 
   if (offshore) {
-    const sea = new THREE.Mesh(
-      new THREE.CircleGeometry(260, 48),
-      mat(0x1f5d7a, { transparent: true, opacity: 0.95 }),
-    );
-    sea.rotation.x = -Math.PI / 2;
-    root.add(sea);
+    root.add(makeTerrain(C.water));
   } else {
     root.add(makeTerrain(C.scrub));
     root.add(makeTrees(26, 95, 200, 3));
@@ -529,7 +535,7 @@ function buildHydro(capacityMW: number): BuiltAsset {
   const mech = makeComponent("mech", "Turbine hall", true);
   const shells: THREE.Mesh[] = [];
 
-  root.add(makeTerrain(C.grass, false));
+  root.add(makeTerrain(C.grass));
   const ridgeMat = mat(0x4a6136);
   for (const sx of [-1, 1]) {
     const ridge = new THREE.Mesh(new THREE.SphereGeometry(60, 12, 10), ridgeMat);

@@ -105,6 +105,8 @@ export default function AssetScene({
     renderer.domElement.style.width = "100%";
     renderer.domElement.style.height = "100%";
     renderer.domElement.style.imageRendering = "pixelated";
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.BasicShadowMap;
     mount.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -144,10 +146,19 @@ export default function AssetScene({
     controls.enableDamping = true;
     controls.enabled = false;
 
-    scene.add(new THREE.HemisphereLight(0xdde9f0, 0x3a4046, 0.85 + daylight * 0.35));
+    scene.add(new THREE.HemisphereLight(0xdde9f0, 0x3a4046, 0.62 + daylight * 0.28));
     // Fixed key direction so box faces always read as three clean tones.
-    const sun = new THREE.DirectionalLight(0xfff4e0, 0.45 + daylight * 0.75);
+    const sun = new THREE.DirectionalLight(0xfff4e0, 0.7 + daylight * 0.9);
     sun.position.set(120, 160, 60);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.left = -170;
+    sun.shadow.camera.right = 170;
+    sun.shadow.camera.top = 170;
+    sun.shadow.camera.bottom = -170;
+    sun.shadow.camera.near = 40;
+    sun.shadow.camera.far = 520;
+    sun.shadow.bias = -0.002;
     scene.add(sun);
     // Site floodlights so night visits stay readable.
     const flood = new THREE.PointLight(0xfff4e0, (1 - daylight) * 1400, 220, 1.7);
@@ -156,6 +167,14 @@ export default function AssetScene({
 
     const built = buildAssetScene(facility.fuel, facility.capacityMW, facility.name);
     builtRef.current = built;
+    // Everything opaque casts and receives the hard diorama shadows.
+    built.root.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        const m = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+        obj.castShadow = !(m as THREE.Material).transparent;
+        obj.receiveShadow = true;
+      }
+    });
     scene.add(built.root);
 
     // Maintenance crew rig: hi-vis ute with a flashing beacon; cones and
@@ -194,6 +213,9 @@ export default function AssetScene({
     siteKit.visible = false;
     rig.add(siteKit);
     rig.visible = false;
+    rig.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) obj.castShadow = true;
+    });
     scene.add(rig);
     const crewStart = new THREE.Vector3(...built.crewStart);
 
