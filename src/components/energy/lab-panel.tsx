@@ -202,7 +202,7 @@ export default function LabPanel() {
       {/* Correlations + fits */}
       <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
         <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">
-          7-DAY CORRELATIONS (PEARSON r)
+          7-DAY CORRELATIONS (PEARSON r, SPIKE-TRIMMED)
         </div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
           {(
@@ -227,7 +227,7 @@ export default function LabPanel() {
           </div>
         </div>
         <div className="mt-2 border-t pt-1.5 text-[9px] leading-relaxed text-[var(--ink-soft)]" style={{ borderColor: "var(--edge)" }}>
-          fitted models: price ~ {fit.priceModel.basis === "utilisation" ? "thermal utilisation" : "residual demand"}
+          fitted models: price ~ {fit.priceModel.basis === "utilisation" ? "thermal utilisation" : fit.priceModel.basis === "residual" ? "residual demand" : "hour-of-day profile (regressions weak this week)"}
           {" "}(R² {fmt(fit.priceModel.r2, 2)}) · demand R² {fmt(fit.demandModel.r2, 2)} (+
           {fmt(fit.demandModel.coolPerDeg)} MW/°C cooling) · wind R² {fmt(fit.windModel.r2, 2)} ·
           solar R² {fmt(fit.solarModel.r2, 2)}

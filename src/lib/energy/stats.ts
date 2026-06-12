@@ -133,6 +133,22 @@ export function ols2(x1: number[], x2: number[], y: number[]): { a: number; b1: 
   };
 }
 
+/** q-th quantile (0..1) of the finite values. */
+export function quantile(a: number[], q: number): number {
+  const v = a.filter(Number.isFinite).sort((x, y) => x - y);
+  if (v.length === 0) return NaN;
+  const i = Math.min(Math.max(Math.floor(q * (v.length - 1)), 0), v.length - 1);
+  return v[i];
+}
+
+/** Clip values into [P(lo), P(hi)] — robust fitting in spike-prone markets. */
+export function winsorize(a: number[], lo = 0.02, hi = 0.98): number[] {
+  const qlo = quantile(a, lo);
+  const qhi = quantile(a, hi);
+  if (!Number.isFinite(qlo) || !Number.isFinite(qhi)) return a.slice();
+  return a.map((v) => (Number.isFinite(v) ? Math.min(Math.max(v, qlo), qhi) : v));
+}
+
 /** Error metrics between a forecast and what actually happened. */
 export function errorStats(forecast: number[], actual: number[]) {
   const [f, a] = cleanPairs(forecast, actual);

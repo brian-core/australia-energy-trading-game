@@ -1,6 +1,6 @@
 import type { RegionSeriesData, SeriesPayload } from "./series";
 import type { RegionWeather, WeatherPayload } from "./weather";
-import { errorStats, ols, ols2, pearson, stdDev } from "./stats";
+import { errorStats, ols, ols2, pearson, quantile, stdDev, winsorize } from "./stats";
 
 // The LAB's forward simulation ("time travel"):
 //  1. FIT — from the last 7 days of aligned 30-min grid data and hourly
@@ -16,7 +16,7 @@ import { errorStats, ols, ols2, pearson, stdDev } from "./stats";
 export interface RegionFitInfo {
   corr: { priceTemp: number; priceWind: number; priceSolar: number; priceDemand: number; demandTemp: number; windGenWind: number; solarGenRad: number };
   sigma: { price: number; demand: number; wind: number; solar: number };
-  priceModel: { a: number; b: number; r2: number; sigma: number; basis: "utilisation" | "residual" };
+  priceModel: { a: number; b: number; r2: number; sigma: number; basis: "utilisation" | "residual" | "hourly-profile" };
   demandModel: { r2: number; coolPerDeg: number; heatPerDeg: number };
   windModel: { r2: number };
   solarModel: { r2: number };
@@ -116,20 +116,44 @@ export function fitAndProject(
   const utilisation = t.map((_, i) =>
     hasThermal && Number.isFinite(avail[i]) && avail[i]! > 1 ? residual[i] / avail[i]! : NaN,
   );
-  const utilFit = hasThermal ? ols(utilisation, priceAUD) : null;
-  const residFit = ols(residual, priceAUD);
-  const useUtil = utilFit !== null && utilFit.r2 >= residFit.r2;
+  // Spot markets spike to 100x the median; a handful of $10k+ intervals
+  // crush least-squares and Pearson r to ~0. Fit on winsorized prices
+  // (clipped to P2..P98) so the regression learns the bulk behaviour, and
+  // fall back to an hour-of-day price profile when even the robust
+  // regressions explain little (weak-coupling weeks are real).
+  const priceRobust = winsorize(priceAUD, 0.02, 0.98);
+  const utilFit = hasThermal ? ols(utilisation, priceRobust) : null;
+  const residFit = ols(residual, priceRobust);
+  const MIN_R2 = 0.15;
+  const useUtil = utilFit !== null && utilFit.r2 > residFit.r2 && utilFit.r2 >= MIN_R2;
+  const useResid = !useUtil && residFit.r2 >= MIN_R2;
   const priceFit = useUtil ? utilFit! : residFit;
+  // Hour-of-day price profile (median + IQR-based sigma) as the fallback.
+  const hodPrices: number[][] = Array.from({ length: 24 }, () => []);
+  t.forEach((ts, i) => {
+    if (Number.isFinite(priceRobust[i])) hodPrices[hodOf(ts)].push(priceRobust[i]);
+  });
+  const hodPriceMed = hodPrices.map((arr) => quantile(arr, 0.5));
+  const hodPriceSigma = hodPrices.map((arr) => {
+    const s = stdDev(arr);
+    return Number.isFinite(s) ? s : 0;
+  });
+  const useProfile = !useUtil && !useResid;
 
+  const dayMask = radH.map((r) => Number.isFinite(r) && r > 20);
   const fit: RegionFitInfo = {
     corr: {
-      priceTemp: pearson(tempH, priceAUD),
-      priceWind: pearson(windH, priceAUD),
-      priceSolar: pearson(radH, priceAUD),
-      priceDemand: pearson(demandMW, priceAUD),
+      priceTemp: pearson(tempH, priceRobust),
+      priceWind: pearson(windH, priceRobust),
+      priceSolar: pearson(radH, priceRobust),
+      priceDemand: pearson(demandMW, priceRobust),
       demandTemp: pearson(tempH, demandMW),
       windGenWind: pearson(windH, windMW),
-      solarGenRad: pearson(radH, solarMW),
+      // Daylight samples only — including nights dilutes solar to noise.
+      solarGenRad: pearson(
+        radH.filter((_, i) => dayMask[i]),
+        solarMW.filter((_, i) => dayMask[i]),
+      ),
     },
     sigma: {
       price: stdDev(priceAUD.filter(Number.isFinite)),
@@ -142,7 +166,7 @@ export function fitAndProject(
       b: priceFit.slope,
       r2: priceFit.r2,
       sigma: priceFit.sigma,
-      basis: useUtil ? "utilisation" : "residual",
+      basis: useProfile ? "hourly-profile" : useUtil ? "utilisation" : "residual",
     },
     demandModel: { r2: demandFit.r2, coolPerDeg: demandFit.b1, heatPerDeg: demandFit.b2 },
     windModel: { r2: windFit.r2 },
@@ -189,15 +213,23 @@ export function fitAndProject(
         demandFit.b2 * Math.max(15 - temp, 0),
       0,
     );
-    const x = useUtil ? (d - w - s) / Math.max(availNow, 1) : d - w - s;
-    const p = priceFit.intercept + priceFit.slope * x;
-    const pc = Math.min(Math.max(p, -150), 2000);
+    let p: number;
+    let sig: number;
+    if (useProfile) {
+      p = hodPriceMed[hodOf(ts)];
+      sig = hodPriceSigma[hodOf(ts)] || priceFit.sigma;
+    } else {
+      const x = useUtil ? (d - w - s) / Math.max(availNow, 1) : d - w - s;
+      p = priceFit.intercept + priceFit.slope * x;
+      sig = priceFit.sigma;
+    }
+    const pc = Math.min(Math.max(Number.isFinite(p) ? p : 0, -150), 2000);
     windHat.push(Math.round(w));
     solarHat.push(Math.round(s));
     demandHat.push(Math.round(d));
     priceHat.push(Math.round(pc * 10) / 10);
-    priceLo.push(Math.round((pc - priceFit.sigma) * 10) / 10);
-    priceHi.push(Math.round((pc + priceFit.sigma) * 10) / 10);
+    priceLo.push(Math.round((pc - sig) * 10) / 10);
+    priceHi.push(Math.round((pc + sig) * 10) / 10);
   }
 
   return { t: ft, priceHat, priceLo, priceHi, demandHat, windHat, solarHat, tempC: tempF, windMs: windF, radWm2: radF, fit };
