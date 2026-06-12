@@ -24,6 +24,11 @@
     cleaning, turbine gearboxes, coal deliveries, cell balancing), earn the
     live spot price. Each site renders as an isometric pixel-art diorama with
     an X-ray inspection mode.
+  - LAB: live weather per region (Open-Meteo), spike-trimmed correlations
+    between weather/generation/demand/price, inferred thermal outage watch,
+    macro context (live FX, CPI, fuel references), and a 24-72h price
+    forecast (transparent statistical fits, not AI) that players can
+    snapshot and grade against reality as it arrives.
 - /login — passwordless email sign-in. Accounts add cross-device cloud saves
   and a public leaderboard ranked by company value. Guest play needs no
   account (saves in the browser).

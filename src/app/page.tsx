@@ -95,47 +95,99 @@ export default function Landing() {
 
       <div className="border-t" style={{ borderColor: "var(--edge)" }} />
 
-      <Section title="HOW IT WORKS">
-        <ol className="list-decimal space-y-2 pl-5">
-          <li>
-            <b>Found your company</b> — you start with $500m and a market of 300+ real Australian
-            generators: coal, gas, hydro, wind, solar and batteries, each priced by capacity.
-          </li>
-          <li>
-            <b>Earn the live spot price</b> — your fleet&apos;s output sells at the real AEMO
-            5-minute price for its region. A price spike in South Australia pays your battery;
-            negative midday prices punish your solar farm.
-          </li>
-          <li>
-            <b>Keep it maintained</b> — panels gather dust, gearboxes wear, coal stocks run down.
-            Condition drives output. Dispatch a crew, watch the ute roll out, see the coal train
-            arrive.
-          </li>
-          <li>
-            <b>Walk your sites</b> — dive from orbit into a SimCity-style isometric scene of every
-            asset, flick on X-ray to inspect the machinery, and fix what&apos;s failing.
-          </li>
-        </ol>
+      <Section title="WHAT&apos;S INSIDE — SIX VIEWS">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[
+            {
+              tab: "POWER",
+              title: "The live grid",
+              body: "A 3D globe of Australia\u2019s power system: generation vs demand columns per state, 300+ real power stations, interconnector flows, energy arcs into the cities, satellite imagery as you zoom.",
+            },
+            {
+              tab: "PRICE",
+              title: "Live & historic prices",
+              body: "Wholesale spot per region in AEMO price bands, merchant vs retail comparison, and 7/90-day price history charts.",
+            },
+            {
+              tab: "DESK",
+              title: "The trading desk",
+              body: "Set up a flat-rate retail book, paper-trade swaps and caps against the live market, backtest over real history, and get rule-based hedge signals.",
+            },
+            {
+              tab: "BUILD",
+              title: "What-if modeller",
+              body: "Drop Snowy 2.0 or close Eraring and watch a merit-order model re-price the region \u2014 mix shift, capture prices, and the hit to your book.",
+            },
+            {
+              tab: "OPS",
+              title: "The game",
+              body: "Found a company with $500m. Buy real stations, keep them maintained, earn the actual 5-minute spot price, climb the leaderboard.",
+            },
+            {
+              tab: "LAB",
+              title: "Weather & forecasting",
+              body: "Live weather per region, spike-trimmed correlations, outage detection, and a time-travel price forecast you can snapshot and grade against reality.",
+            },
+          ].map((f) => (
+            <div key={f.tab} className="rounded-xl border p-4" style={{ borderColor: "var(--edge)" }}>
+              <div className="mb-1 flex items-center gap-2">
+                <span
+                  className="rounded px-1.5 py-0.5 font-[family-name:var(--f-mono)] text-[10px] tracking-widest"
+                  style={{ background: "var(--gen)", color: "#0b0d11" }}
+                >
+                  {f.tab}
+                </span>
+                <span className="font-semibold">{f.title}</span>
+              </div>
+              <p className="text-sm text-[var(--ink-soft)]">{f.body}</p>
+            </div>
+          ))}
+        </div>
       </Section>
 
-      <Section title="ALSO IN THE BOX">
-        <p>
-          <b>Live grid map</b> — a 3D globe of Australia&apos;s power system: generation vs demand
-          per state, every major power station, interconnector flows, city supply arcs, and
-          satellite imagery when you zoom in.
-        </p>
-        <p>
-          <b>Prices</b> — live wholesale spot per region against benchmark retail rates, with 7-day
-          and 90-day history.
-        </p>
-        <p>
-          <b>Trading desk</b> — paper-trade swaps and caps against the live market for a
-          hypothetical flat-rate energy retailer, with backtesting and hedge alerts.
-        </p>
-        <p>
-          <b>Build modeller</b> — what does Snowy 2.0 or the Eraring closure do to prices? A
-          stylised merit-order model answers, using real project data.
-        </p>
+      <div className="border-t" style={{ borderColor: "var(--edge)" }} />
+
+      <Section title="HOW TO PLAY">
+        <ol className="list-decimal space-y-2 pl-5">
+          <li>
+            Open <Link href="/play" className="underline">the app</Link> and pick the{" "}
+            <b>OPS</b> tab. You start with <b>$500m</b>.
+          </li>
+          <li>
+            <b>Buy stations</b> from the MARKET — they&apos;re real Australian generators, priced by
+            capacity and fuel. Each one immediately starts earning its region&apos;s live AEMO spot
+            price for every megawatt it sends out.
+          </li>
+          <li>
+            <b>Maintain or decay</b> — panels gather dust, gearboxes wear, coal stocks run down,
+            and output falls with condition. Hit FIX (costs cash, derates the asset while the crew
+            works) and watch the ute roll out.
+          </li>
+          <li>
+            <b>Visit your sites</b> — press ▶ SITE to dive from orbit into an isometric pixel-art
+            scene of the asset running. Toggle <b>X-RAY</b> to see the machinery, tap the floating
+            diamonds to inspect a component, fix it on the spot. Coal deliveries arrive by train.
+          </li>
+          <li>
+            <b>Play the market</b> — prices spike in heatwaves and crash in sunny lunchtimes.
+            Batteries love volatility; coal loves steady highs; solar earns nothing at night.
+            Watch the LAB forecast to time your maintenance windows.
+          </li>
+          <li>
+            <Link href="/login" className="underline">
+              <b>Sign up</b>
+            </Link>{" "}
+            (free, passwordless) for cloud saves across devices and a spot on the leaderboard —
+            ranked by company value. Or just play as a guest.
+          </li>
+        </ol>
+        <div className="mt-4 rounded-xl border p-4 text-sm text-[var(--ink-soft)]" style={{ borderColor: "var(--edge)" }}>
+          <b className="text-[var(--ink)]">Controls</b> — drag to rotate, scroll or pinch to zoom,
+          click/tap anything that glows or floats. On the globe: click a station dot for its detail
+          card, a state for its stats. On mobile the panel lives in a bottom sheet — tap the handle
+          to expand. In site view: drag orbits, X-RAY reveals internals, diamonds mark what you can
+          inspect.
+        </div>
       </Section>
 
       <Section title="THE DATA IS REAL">
