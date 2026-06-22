@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/energy/macro/ingest",
+      "schedule": "0 22 * * *"
+    }
+  ]
+}
