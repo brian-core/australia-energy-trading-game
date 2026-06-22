@@ -20,6 +20,12 @@ export const TASKS_BY_FUEL: Record<FuelGroup, MaintTaskDef[]> = {
     { id: "soiling", label: "Panel cleaning", decayPerMin: 1.3, costPerMW: 220, durationSec: 90 },
     { id: "software", label: "Inverter software", decayPerMin: 0.7, costPerMW: 120, durationSec: 60 },
   ],
+  // Rooftop is behind-the-meter (not a buildable facility); mirrors solar so
+  // the FuelGroup map stays exhaustive.
+  rooftop: [
+    { id: "soiling", label: "Panel cleaning", decayPerMin: 1.3, costPerMW: 220, durationSec: 90 },
+    { id: "software", label: "Inverter software", decayPerMin: 0.7, costPerMW: 120, durationSec: 60 },
+  ],
   wind: [
     { id: "gearbox", label: "Turbine maintenance", decayPerMin: 1.0, costPerMW: 450, durationSec: 150 },
     { id: "software", label: "Control software", decayPerMin: 0.7, costPerMW: 120, durationSec: 60 },
@@ -54,6 +60,7 @@ export const PRICE_PER_MW: Record<FuelGroup, number> = {
   hydro: 1_800_000,
   wind: 1_400_000,
   solar: 900_000,
+  rooftop: 900_000,
   battery: 1_100_000,
   bioenergy: 800_000,
   distillate: 300_000,
@@ -66,6 +73,7 @@ export const CF_BY_FUEL: Record<FuelGroup, number> = {
   hydro: 0.45,
   wind: 0.36,
   solar: 0.95, // multiplied by the diurnal solar shape
+  rooftop: 0.95,
   battery: 0.25, // evening-arbitrage proxy
   bioenergy: 0.6,
   distillate: 0.1,

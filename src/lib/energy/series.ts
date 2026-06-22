@@ -1,6 +1,7 @@
-import { REGIONS } from "./regions";
-import { fetchJsonWithHostFallback } from "./sources";
+import { REGIONS, groupFuelTech } from "./regions";
+import { oeFetch, toNetworkNaive, type OeEnvelope, type OeResult, type OeRow } from "./sources";
 import { synthHourly } from "./weather";
+import type { FuelGroup } from "./types";
 
 // Aligned 7-day, 30-minute series per region for the LAB: price, demand,
 // wind generation, solar generation. Live from the OpenElectricity 7d files;
@@ -25,76 +26,88 @@ export interface SeriesPayload {
   regions: Record<string, RegionSeriesData>;
 }
 
-interface OeSeries {
-  id?: string;
-  type?: string;
-  fuel_tech?: string;
-  history?: { start?: string; interval?: string; data?: Array<number | null> };
-}
+const STEP_MS = 1800_000; // 30 minutes
+const LEN = 7 * 48; // 336 half-hour points
 
-function intervalToH(s: string | undefined): number {
-  const m = s?.match(/^(\d+)(m|h|d)$/i);
-  if (!m) return 0.5;
-  const n = Number(m[1]);
-  return m[2] === "m" ? n / 60 : m[2] === "h" ? n : n * 24;
-}
-
-/** Resample a series onto a 30-min grid anchored at startMs (nearest index). */
-function onGrid(s: OeSeries, startMs: number, len: number): number[] {
-  const out = new Array<number>(len).fill(NaN);
-  const sStart = s.history?.start ? Date.parse(s.history.start) : NaN;
-  const sInt = intervalToH(s.history?.interval) * 3600_000;
-  const data = s.history?.data;
-  if (!Number.isFinite(sStart) || !sInt || !data) return out;
-  for (let i = 0; i < len; i++) {
-    const ts = startMs + i * 1800_000;
-    const j = Math.round((ts - sStart) / sInt);
-    const v = data[j];
-    if (typeof v === "number" && Number.isFinite(v)) out[i] = v;
+/**
+ * Resample a [ts, value] series onto the 30-min grid anchored at startMs by
+ * picking the source sample nearest each grid point (within one step).
+ */
+function resample(rows: OeRow[], startMs: number): number[] {
+  const out = new Array<number>(LEN).fill(NaN);
+  const pts: Array<[number, number]> = [];
+  for (const [ts, v] of rows) {
+    const ms = Date.parse(ts);
+    if (Number.isFinite(ms) && typeof v === "number" && Number.isFinite(v)) pts.push([ms, v]);
+  }
+  if (pts.length === 0) return out;
+  let j = 0;
+  for (let i = 0; i < LEN; i++) {
+    const t = startMs + i * STEP_MS;
+    while (j + 1 < pts.length && Math.abs(pts[j + 1][0] - t) <= Math.abs(pts[j][0] - t)) j++;
+    if (Math.abs(pts[j][0] - t) <= STEP_MS) out[i] = pts[j][1];
   }
   return out;
 }
 
-async function fetchRegionSeries(network: "NEM" | "WEM", region?: string): Promise<RegionSeriesData> {
-  const path = region
-    ? `/v3/stats/au/${network}/${region}/power/7d.json`
-    : `/v3/stats/au/${network}/power/7d.json`;
-  const json = (await fetchJsonWithHostFallback(path, 600)) as { data?: OeSeries[] };
-  if (!Array.isArray(json.data)) throw new Error(`bad payload ${path}`);
-
-  const price = json.data.find((s) => s.type === "price" || s.id?.endsWith(".price"));
-  const demand = json.data.find((s) => s.type === "demand" || s.id?.endsWith(".demand"));
-  const anchor = price ?? demand;
-  const startMs = anchor?.history?.start ? Date.parse(anchor.history.start) : NaN;
-  const len = anchor?.history?.data?.length ?? 0;
-  if (!Number.isFinite(startMs) || len < 48) throw new Error(`no anchor series ${path}`);
-
-  const sum = (matchers: string[]): number[] => {
-    const acc = new Array<number>(len).fill(0);
-    const seen = new Array<boolean>(len).fill(false);
-    for (const s of json.data!) {
-      if (s.type !== "power" || !s.fuel_tech) continue;
-      if (!matchers.some((m) => s.fuel_tech!.startsWith(m))) continue;
-      const g = onGrid(s, startMs, len);
-      for (let i = 0; i < len; i++) {
-        if (Number.isFinite(g[i])) {
-          acc[i] += g[i];
-          seen[i] = true;
-        }
+/** Sum the resampled power series whose fuel tech maps to one of `groups`. */
+function sumGroups(results: OeResult[], groups: FuelGroup[], startMs: number): number[] {
+  const acc = new Array<number>(LEN).fill(0);
+  const seen = new Array<boolean>(LEN).fill(false);
+  for (const r of results) {
+    const g = r.columns.fueltech ? groupFuelTech(r.columns.fueltech) : null;
+    if (!g || !groups.includes(g)) continue;
+    const grid = resample(r.data, startMs);
+    for (let i = 0; i < LEN; i++) {
+      if (Number.isFinite(grid[i])) {
+        acc[i] += grid[i];
+        seen[i] = true;
       }
     }
-    return acc.map((v, i) => (seen[i] ? v : NaN));
-  };
+  }
+  return acc.map((v, i) => (seen[i] ? v : NaN));
+}
 
+function powerResults(env: OeEnvelope | null, region: string): OeResult[] {
+  const block = env?.data.find((b) => b.metric === "power");
+  if (!block) return [];
+  return block.results.filter((r) => (r.columns.region ?? region) === region);
+}
+
+function marketRows(env: OeEnvelope | null, region: string, metric: string): OeRow[] {
+  const block = env?.data.find((b) => b.metric === metric);
+  const r = block?.results.find((rr) => (rr.columns.region ?? region) === region);
+  return r?.data ?? [];
+}
+
+function assembleRegion(
+  startMs: number,
+  power: OeEnvelope | null,
+  market: OeEnvelope | null,
+  region: string,
+): RegionSeriesData | null {
+  const results = powerResults(power, region);
+  const priceAUD = resample(marketRows(market, region, "price"), startMs);
+  const demandMW = resample(marketRows(market, region, "demand"), startMs);
+  // LAB solar is utility-scale only (the "solar" group), matching operational
+  // demand; rooftop is netted out of demand and grouped separately.
+  const windMW = sumGroups(results, ["wind"], startMs);
+  const solarMW = sumGroups(results, ["solar"], startMs);
+  const thermalMW = sumGroups(results, ["coal", "gas"], startMs);
+
+  const hasData = [priceAUD, demandMW, windMW, solarMW, thermalMW].some((a) =>
+    a.some(Number.isFinite),
+  );
+  if (!hasData) return null;
   return {
     startMs,
     intervalH: 0.5,
-    t: Array.from({ length: len }, (_, i) => startMs + i * 1800_000),
-    priceAUD: price ? onGrid(price, startMs, len) : new Array(len).fill(NaN),
-    demandMW: demand ? onGrid(demand, startMs, len) : sum([""]),
-    windMW: sum(["wind"]),
-    solarMW: sum(["solar"]),
-    thermalMW: sum(["coal", "gas"]),
+    t: Array.from({ length: LEN }, (_, i) => startMs + i * STEP_MS),
+    priceAUD,
+    demandMW,
+    windMW,
+    solarMW,
+    thermalMW,
   };
 }
 
@@ -159,18 +172,54 @@ function synthSeries(code: string, endMs: number): RegionSeriesData {
 }
 
 export async function buildSeriesPayload(): Promise<SeriesPayload> {
-  const results = await Promise.all(
-    REGIONS.map((r) =>
-      (r.network === "WEM" ? fetchRegionSeries("WEM") : fetchRegionSeries("NEM", r.code)).catch(
-        () => null,
-      ),
-    ),
-  );
-  const anyOk = results.some((r) => r !== null);
-  const endMs = Math.floor(Date.now() / 3600_000) * 3600_000;
+  const endMs = Math.floor(Date.now() / STEP_MS) * STEP_MS;
+  const startMs = endMs - (LEN - 1) * STEP_MS;
+  const windowStart = startMs - STEP_MS;
+
+  const power = (network: "NEM" | "WEM") =>
+    oeFetch(
+      `/data/network/${network}`,
+      {
+        metrics: "power",
+        interval: "5m",
+        primary_grouping: "network_region",
+        secondary_grouping: "fueltech",
+        date_start: toNetworkNaive(network, windowStart),
+      },
+      600,
+    ).catch(() => null);
+  const market = (network: "NEM" | "WEM") =>
+    oeFetch(
+      `/market/network/${network}`,
+      {
+        metrics: ["price", "demand"],
+        interval: "5m",
+        primary_grouping: "network_region",
+        date_start: toNetworkNaive(network, windowStart),
+      },
+      600,
+    ).catch(() => null);
+
+  const [nemPower, nemMarket, wemPower, wemMarket] = await Promise.all([
+    power("NEM"),
+    market("NEM"),
+    power("WEM"),
+    market("WEM"),
+  ]);
+
+  let anyReal = false;
   const regions: Record<string, RegionSeriesData> = {};
-  REGIONS.forEach((meta, i) => {
-    regions[meta.code] = results[i] ?? synthSeries(meta.code, endMs);
+  REGIONS.forEach((meta) => {
+    const isWem = meta.network === "WEM";
+    const region = isWem ? "WEM" : meta.code;
+    const real = assembleRegion(
+      startMs,
+      isWem ? wemPower : nemPower,
+      isWem ? wemMarket : nemMarket,
+      region,
+    );
+    if (real) anyReal = true;
+    regions[meta.code] = real ?? synthSeries(meta.code, endMs);
   });
-  return { demo: !anyOk, updatedAt: new Date().toISOString(), regions };
+  return { demo: !anyReal, updatedAt: new Date().toISOString(), regions };
 }

@@ -20,25 +20,25 @@ export const DEMO_REGION_DATA: Record<
     demandMW: 6900,
     netInterchangeMW: 480,
     priceAUD: 112.4,
-    fuelMix: mix({ coal: 4900, gas: 980, hydro: 360, wind: 420, solar: 520, battery: 160, bioenergy: 60 }),
+    fuelMix: mix({ coal: 4900, gas: 980, hydro: 360, wind: 420, solar: 520, rooftop: 620, battery: 160, bioenergy: 60 }),
   },
   NSW1: {
     demandMW: 8300,
     netInterchangeMW: -1150,
     priceAUD: 128.9,
-    fuelMix: mix({ coal: 4700, gas: 520, hydro: 900, wind: 640, solar: 310, battery: 140, bioenergy: 40 }),
+    fuelMix: mix({ coal: 4700, gas: 520, hydro: 900, wind: 640, solar: 310, rooftop: 540, battery: 140, bioenergy: 40 }),
   },
   VIC1: {
     demandMW: 5600,
     netInterchangeMW: 720,
     priceAUD: 96.2,
-    fuelMix: mix({ coal: 3700, gas: 260, hydro: 540, wind: 1500, solar: 180, battery: 120 }),
+    fuelMix: mix({ coal: 3700, gas: 260, hydro: 540, wind: 1500, solar: 180, rooftop: 280, battery: 120 }),
   },
   SA1: {
     demandMW: 1650,
     netInterchangeMW: -210,
     priceAUD: 87.5,
-    fuelMix: mix({ gas: 420, wind: 820, solar: 110, battery: 90, distillate: 10 }),
+    fuelMix: mix({ gas: 420, wind: 820, solar: 110, rooftop: 360, battery: 90, distillate: 10 }),
   },
   TAS1: {
     demandMW: 1120,
@@ -50,7 +50,7 @@ export const DEMO_REGION_DATA: Record<
     demandMW: 2950,
     netInterchangeMW: 0,
     priceAUD: 84.0,
-    fuelMix: mix({ coal: 980, gas: 1180, wind: 480, solar: 220, battery: 70, bioenergy: 20 }),
+    fuelMix: mix({ coal: 980, gas: 1180, wind: 480, solar: 220, rooftop: 300, battery: 70, bioenergy: 20 }),
   },
 };
 

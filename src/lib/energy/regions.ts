@@ -66,15 +66,18 @@ export const FUEL_META: Record<FuelGroup, FuelMeta> = {
   distillate: { label: "Distillate", color: "#8a6d3b", renewable: false, order: 2 },
   hydro: { label: "Hydro", color: "#3f8fd2", renewable: true, order: 3 },
   wind: { label: "Wind", color: "#48a87c", renewable: true, order: 4 },
-  solar: { label: "Solar", color: "#f2c14e", renewable: true, order: 5 },
-  battery: { label: "Battery", color: "#9b6bd3", renewable: true, order: 6 },
-  bioenergy: { label: "Bioenergy", color: "#6e7535", renewable: true, order: 7 },
+  solar: { label: "Solar (utility)", color: "#f2c14e", renewable: true, order: 5 },
+  rooftop: { label: "Solar (rooftop)", color: "#f7e08a", renewable: true, order: 6 },
+  battery: { label: "Battery", color: "#9b6bd3", renewable: true, order: 7 },
+  bioenergy: { label: "Bioenergy", color: "#6e7535", renewable: true, order: 8 },
 };
 
 /**
- * Map an OpenNEM/OpenElectricity fuel_tech id to a display group.
- * Returns null for series that are loads or accounted for elsewhere
- * (battery charging, pumped-hydro pumping, imports/exports).
+ * Map an OpenElectricity fuel_tech id to a display group.
+ * Returns null for series that are loads, flows, or already counted elsewhere
+ * (battery charging, pumped-hydro pumping, imports/exports, and the aggregate
+ * net `battery` series — we count the gross `battery_discharging` instead so
+ * charging and discharging are not double-counted).
  */
 export function groupFuelTech(fueltech: string): FuelGroup | null {
   const ft = fueltech.toLowerCase();
@@ -83,9 +86,13 @@ export function groupFuelTech(fueltech: string): FuelGroup | null {
   if (ft === "distillate" || ft === "liquid_fuel") return "distillate";
   if (ft === "hydro") return "hydro";
   if (ft === "wind" || ft === "wind_offshore") return "wind";
+  // Behind-the-meter rooftop is tracked separately from utility-scale solar so
+  // operational generation reconciles with operational (rooftop-net) demand.
+  if (ft === "solar_rooftop") return "rooftop";
   if (ft.startsWith("solar")) return "solar";
-  if (ft === "battery_discharging" || ft === "battery") return "battery";
+  if (ft === "battery_discharging") return "battery";
   if (ft.startsWith("bioenergy")) return "bioenergy";
-  // battery_charging, pumps, imports, exports → not generation
+  // battery (net aggregate), battery_charging, pumps, imports, exports,
+  // interconnector → not gross generation.
   return null;
 }
