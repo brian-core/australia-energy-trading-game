@@ -492,6 +492,20 @@ export default function BuildPanel({
         <div className="text-[10px] text-[var(--ink-soft)]">loading price history…</div>
       ) : (
         <>
+          {/* Project finance — custom assets only. Sits directly under the
+              New Asset picker so the LCOE/LCOS + NPV/IRR show up as soon as an
+              asset is configured, before the price/mix detail below. */}
+          {!project && (
+            <ProjectFinance
+              tech={asset.tech}
+              capacityMW={asset.mw}
+              captureAUD={result.captureAUD ?? result.avgAfterAUD}
+              prices={history?.regions[asset.region] ?? []}
+              demo={!!history?.demo}
+              macro={macro}
+            />
+          )}
+
           {/* Price impact */}
           <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
             <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">
@@ -599,18 +613,6 @@ export default function BuildPanel({
               )}
             </div>
           </div>
-
-          {/* Project finance — custom assets only */}
-          {!project && (
-            <ProjectFinance
-              tech={asset.tech}
-              capacityMW={asset.mw}
-              captureAUD={result.captureAUD ?? result.avgAfterAUD}
-              prices={history?.regions[asset.region] ?? []}
-              demo={!!history?.demo}
-              macro={macro}
-            />
-          )}
         </>
       )}
     </div>
