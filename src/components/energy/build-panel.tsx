@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { runBacktest } from "@/lib/energy/backtest";
 import { loadDeskState } from "@/lib/energy/desk-storage";
 import type { HistoryPayload, PricePoint } from "@/lib/energy/history";
+import type { MacroPayload } from "@/lib/energy/macro";
 import { FUEL_META } from "@/lib/energy/regions";
 import {
   PIPELINE_PROJECTS,
@@ -132,18 +133,24 @@ function FinField({
  * inputs feeding LCOE/LCOS, NPV/IRR/payback, and a Monte-Carlo distribution of
  * lifetime NPV (price risk bootstrapped from the region's price history).
  */
+// Equity-risk premium added to the RBA cash rate to seed the discount-rate
+// (WACC) default. User-overridable in the inputs panel.
+const EQUITY_PREMIUM = 0.04;
+
 function ProjectFinance({
   tech,
   capacityMW,
   captureAUD,
   prices,
   demo,
+  macro,
 }: {
   tech: ScenarioTech;
   capacityMW: number;
   captureAUD: number;
   prices: PricePoint[];
   demo: boolean;
+  macro: MacroPayload | null;
 }) {
   const [open, setOpen] = useState(false);
   const [overrides, setOverrides] = useState<Partial<FinanceInputs>>({});
@@ -155,9 +162,23 @@ function ProjectFinance({
     setOverrides({});
   }
 
+  // Seed WACC and inflation from live macro: discount = cash rate + equity
+  // premium; inflation = headline CPI. Falls back to finance.ts defaults.
+  const macroDefaults = useMemo(
+    () =>
+      macro
+        ? {
+            discountRate: macro.cashRate.pct / 100 + EQUITY_PREMIUM,
+            inflation: macro.cpi.yoyPct / 100,
+          }
+        : undefined,
+    [macro],
+  );
+  const macroLive = !!macro && (macro.cashRate.live || macro.cpi.live);
+
   const fin: FinanceInputs = useMemo(
-    () => ({ ...defaultFinanceInputs(tech, capacityMW, captureAUD), ...overrides }),
-    [tech, capacityMW, captureAUD, overrides],
+    () => ({ ...defaultFinanceInputs(tech, capacityMW, captureAUD, macroDefaults), ...overrides }),
+    [tech, capacityMW, captureAUD, macroDefaults, overrides],
   );
   const result = useMemo(() => runFinance(fin), [fin]);
   const mc = useMemo(() => runMonteCarlo(fin, prices), [fin, prices]);
@@ -210,6 +231,13 @@ function ProjectFinance({
             <span style={{ color: mc.probPositive >= 0.5 ? "var(--gen)" : "#e2483d" }}>
               {Math.round(mc.probPositive * 100)}%
             </span>
+          </div>
+        )}
+        {macro && (
+          <div className="text-[9px] text-[var(--ink-soft)]">
+            WACC default {macroLive ? "from RBA cash rate" : "≈"} {macro.cashRate.pct.toFixed(2)}% +{" "}
+            {(EQUITY_PREMIUM * 100).toFixed(0)}% premium · inflation {macro.cpi.yoyPct.toFixed(1)}%
+            {macroLive ? "" : " (reference)"}
           </div>
         )}
       </div>
@@ -279,6 +307,22 @@ export default function BuildPanel({
     tech: "solar",
     mw: 500,
   });
+
+  // Live macro context (RBA cash rate + CPI) → finance defaults. Optional; the
+  // finance card falls back to its built-in defaults when this is null.
+  const [macro, setMacro] = useState<MacroPayload | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/energy/macro")
+      .then((r) => r.json() as Promise<MacroPayload>)
+      .then((m) => {
+        if (!cancelled) setMacro(m);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const project = projectId === "custom" ? null : PIPELINE_PROJECTS.find((p) => p.id === projectId);
 
@@ -564,6 +608,7 @@ export default function BuildPanel({
               captureAUD={result.captureAUD ?? result.avgAfterAUD}
               prices={history?.regions[asset.region] ?? []}
               demo={!!history?.demo}
+              macro={macro}
             />
           )}
         </>
