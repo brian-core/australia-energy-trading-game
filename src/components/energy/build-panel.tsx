@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { runBacktest } from "@/lib/energy/backtest";
 import { loadDeskState } from "@/lib/energy/desk-storage";
-import type { HistoryPayload } from "@/lib/energy/history";
+import type { HistoryPayload, PricePoint } from "@/lib/energy/history";
+import type { MacroPayload } from "@/lib/energy/macro";
 import { FUEL_META } from "@/lib/energy/regions";
 import {
   PIPELINE_PROJECTS,
@@ -12,6 +13,12 @@ import {
   type ScenarioResult,
   type ScenarioTech,
 } from "@/lib/energy/scenario";
+import {
+  defaultFinanceInputs,
+  runFinance,
+  runMonteCarlo,
+  type FinanceInputs,
+} from "@/lib/energy/finance";
 import type { LivePayload } from "@/lib/energy/types";
 import PriceChart from "./price-chart";
 
@@ -61,6 +68,230 @@ const TECH_OPTIONS: { value: ScenarioTech; label: string }[] = [
   { value: "gas", label: "gas peaker" },
 ];
 
+function NpvSpark({ samples, p50 }: { samples: number[]; p50: number }) {
+  // Simple histogram of NPV outcomes; bar at/above zero green, below red.
+  const bins = 32;
+  if (samples.length === 0) return null;
+  const lo = Math.min(...samples);
+  const hi = Math.max(...samples);
+  const span = hi - lo || 1;
+  const counts = new Array(bins).fill(0);
+  for (const v of samples) counts[Math.min(bins - 1, Math.floor(((v - lo) / span) * bins))]++;
+  const max = Math.max(...counts, 1);
+  const zeroBin = Math.min(bins - 1, Math.max(0, Math.floor(((0 - lo) / span) * bins)));
+  return (
+    <div className="flex h-8 items-end gap-px" title={`P50 NPV ${money(p50)}`}>
+      {counts.map((c, i) => (
+        <div
+          key={i}
+          className="flex-1 rounded-sm"
+          style={{
+            height: `${(c / max) * 100}%`,
+            minHeight: c > 0 ? 1 : 0,
+            background: i >= zeroBin ? "var(--gen)" : "#e2483d",
+            opacity: 0.85,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function FinField({
+  label,
+  value,
+  step,
+  suffix,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  step: number;
+  suffix?: string;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-0.5">
+      <span className="text-[9px] tracking-wider text-[var(--ink-soft)]">{label}</span>
+      <span className="flex items-center gap-1">
+        <input
+          type="number"
+          value={value}
+          step={step}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="w-full rounded border bg-black/30 px-1 py-0.5 text-right text-[10px]"
+          style={{ borderColor: "var(--edge)" }}
+        />
+        {suffix && <span className="text-[9px] text-[var(--ink-soft)]">{suffix}</span>}
+      </span>
+    </label>
+  );
+}
+
+/**
+ * Developer-grade project finance for a custom asset: editable cost/performance
+ * inputs feeding LCOE/LCOS, NPV/IRR/payback, and a Monte-Carlo distribution of
+ * lifetime NPV (price risk bootstrapped from the region's price history).
+ */
+// Equity-risk premium added to the RBA cash rate to seed the discount-rate
+// (WACC) default. User-overridable in the inputs panel.
+const EQUITY_PREMIUM = 0.04;
+
+function ProjectFinance({
+  tech,
+  capacityMW,
+  captureAUD,
+  prices,
+  demo,
+  macro,
+}: {
+  tech: ScenarioTech;
+  capacityMW: number;
+  captureAUD: number;
+  prices: PricePoint[];
+  demo: boolean;
+  macro: MacroPayload | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [overrides, setOverrides] = useState<Partial<FinanceInputs>>({});
+  // Reset overrides when the technology changes (defaults differ per tech).
+  // Render-time reset per the React "you might not need an effect" pattern.
+  const [prevTech, setPrevTech] = useState(tech);
+  if (prevTech !== tech) {
+    setPrevTech(tech);
+    setOverrides({});
+  }
+
+  // Seed WACC and inflation from live macro: discount = cash rate + equity
+  // premium; inflation = headline CPI. Falls back to finance.ts defaults.
+  const macroDefaults = useMemo(
+    () =>
+      macro
+        ? {
+            discountRate: macro.cashRate.pct / 100 + EQUITY_PREMIUM,
+            inflation: macro.cpi.yoyPct / 100,
+          }
+        : undefined,
+    [macro],
+  );
+  const macroLive = !!macro && (macro.cashRate.live || macro.cpi.live);
+
+  const fin: FinanceInputs = useMemo(
+    () => ({ ...defaultFinanceInputs(tech, capacityMW, captureAUD, macroDefaults), ...overrides }),
+    [tech, capacityMW, captureAUD, macroDefaults, overrides],
+  );
+  const result = useMemo(() => runFinance(fin), [fin]);
+  const mc = useMemo(() => runMonteCarlo(fin, prices), [fin, prices]);
+  const set = (k: keyof FinanceInputs) => (v: number) => setOverrides((o) => ({ ...o, [k]: v }));
+
+  const irrPct = (x: number | null) => (x == null ? "—" : `${(x * 100).toFixed(1)}%`);
+
+  return (
+    <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between text-[10px] tracking-widest text-[var(--ink-soft)]"
+      >
+        <span>PROJECT FINANCE — {result.levelisedKind}</span>
+        <span>{open ? "−" : "+"}</span>
+      </button>
+
+      {/* Headline outputs (always visible) */}
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        <div>
+          <div className="text-sm">${result.lcoeAUD.toFixed(0)}</div>
+          <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">{result.levelisedKind} $/MWH</div>
+        </div>
+        <div>
+          <div className="text-sm" style={{ color: result.npvAUD >= 0 ? "var(--gen)" : "#e2483d" }}>
+            {money(result.npvAUD)}
+          </div>
+          <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">NPV @ {(fin.discountRate * 100).toFixed(1)}%</div>
+        </div>
+        <div>
+          <div className="text-sm">{irrPct(result.irr)}</div>
+          <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">IRR</div>
+        </div>
+      </div>
+
+      <div className="mt-1.5 space-y-0.5 text-[10px] text-[var(--ink-soft)]">
+        <div className="flex justify-between">
+          <span>capex / AEP yr1</span>
+          <span>
+            {money(result.totalCapexAUD)} · {Math.round(result.aepYear1MWh / 1000)} GWh
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span>payback (undiscounted)</span>
+          <span>{result.paybackYears == null ? "never" : `${result.paybackYears} yr`}</span>
+        </div>
+        {mc && (
+          <div className="flex justify-between">
+            <span>P(NPV&gt;0) · {mc.runs} runs</span>
+            <span style={{ color: mc.probPositive >= 0.5 ? "var(--gen)" : "#e2483d" }}>
+              {Math.round(mc.probPositive * 100)}%
+            </span>
+          </div>
+        )}
+        {macro && (
+          <div className="text-[9px] text-[var(--ink-soft)]">
+            WACC default {macroLive ? "from RBA cash rate" : "≈"} {macro.cashRate.pct.toFixed(2)}% +{" "}
+            {(EQUITY_PREMIUM * 100).toFixed(0)}% premium · inflation {macro.cpi.yoyPct.toFixed(1)}%
+            {macroLive ? "" : " (reference)"}
+          </div>
+        )}
+      </div>
+
+      {/* Monte-Carlo distribution */}
+      {mc && (
+        <div className="mt-2">
+          <div className="mb-0.5 flex justify-between text-[9px] text-[var(--ink-soft)]">
+            <span>NPV P10 {money(mc.npvP10)}</span>
+            <span>P50 {money(mc.npvP50)}</span>
+            <span>P90 {money(mc.npvP90)}</span>
+          </div>
+          <NpvSpark samples={mc.npvSamples} p50={mc.npvP50} />
+          <div className="mt-0.5 text-[9px] text-[var(--ink-soft)]">
+            IRR P10–P90 {irrPct(mc.irrP10)} – {irrPct(mc.irrP90)}
+            {demo && " · SYNTHETIC HISTORY"}
+          </div>
+        </div>
+      )}
+
+      {/* Editable inputs */}
+      {open && (
+        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t pt-2" style={{ borderColor: "var(--edge)" }}>
+          <FinField label="CAPACITY FACTOR" value={Math.round(fin.capacityFactor * 1000) / 10} step={1} suffix="%" onChange={(v) => set("capacityFactor")(v / 100)} />
+          <FinField label="CAPEX" value={Math.round(fin.capexPerMW / 1000)} step={50} suffix="$k/MW" onChange={(v) => set("capexPerMW")(v * 1000)} />
+          <FinField label="O&M" value={fin.omPerMWh} step={1} suffix="$/MWh" onChange={set("omPerMWh")} />
+          <FinField label="O&M ESCALATION" value={Math.round(fin.omEscalation * 1000) / 10} step={0.5} suffix="%/yr" onChange={(v) => set("omEscalation")(v / 100)} />
+          <FinField label="DEGRADATION" value={Math.round(fin.degradation * 1000) / 10} step={0.1} suffix="%/yr" onChange={(v) => set("degradation")(v / 100)} />
+          <FinField label="DISCOUNT (WACC)" value={Math.round(fin.discountRate * 1000) / 10} step={0.5} suffix="%" onChange={(v) => set("discountRate")(v / 100)} />
+          <FinField label="OPERATING LIFE" value={fin.operatingLifeYears} step={1} suffix="yr" onChange={set("operatingLifeYears")} />
+          <FinField label="COMMISSIONING" value={fin.commissioningYear} step={1} onChange={set("commissioningYear")} />
+          <FinField label="DEV PHASE" value={fin.devPhaseYears} step={1} suffix="yr" onChange={set("devPhaseYears")} />
+          <FinField label="DEV COST" value={Math.round(fin.devCostPerYear / 1000)} step={100} suffix="$k/yr" onChange={(v) => set("devCostPerYear")(v * 1000)} />
+          <FinField label="DECOMMISSION" value={Math.round(fin.decommissioningCost / 1000)} step={500} suffix="$k" onChange={(v) => set("decommissioningCost")(v * 1000)} />
+          <FinField label="PRICE GROWTH" value={Math.round(fin.priceGrowth * 1000) / 10} step={0.5} suffix="%/yr real" onChange={(v) => set("priceGrowth")(v / 100)} />
+          <FinField label="INFLATION" value={Math.round(fin.inflation * 1000) / 10} step={0.5} suffix="%/yr" onChange={(v) => set("inflation")(v / 100)} />
+          <FinField label="CAPTURE PRICE" value={Math.round(fin.captureAUD)} step={5} suffix="$/MWh" onChange={set("captureAUD")} />
+          <button
+            onClick={() => setOverrides({})}
+            className="col-span-2 mt-0.5 rounded border px-2 py-0.5 text-[9px] tracking-widest text-[var(--ink-soft)] hover:text-[var(--ink)]"
+            style={{ borderColor: "var(--edge)" }}
+          >
+            RESET TO {tech.toUpperCase()} DEFAULTS
+          </button>
+        </div>
+      )}
+      <div className="mt-1.5 text-[9px] leading-snug text-[var(--ink-soft)]">
+        First-order developer finance — capture price from the merit-order sim, price risk
+        bootstrapped from the region&apos;s history. Not a bankable valuation.
+      </div>
+    </div>
+  );
+}
+
 export default function BuildPanel({
   live,
   history,
@@ -76,6 +307,22 @@ export default function BuildPanel({
     tech: "solar",
     mw: 500,
   });
+
+  // Live macro context (RBA cash rate + CPI) → finance defaults. Optional; the
+  // finance card falls back to its built-in defaults when this is null.
+  const [macro, setMacro] = useState<MacroPayload | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/energy/macro")
+      .then((r) => r.json() as Promise<MacroPayload>)
+      .then((m) => {
+        if (!cancelled) setMacro(m);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const project = projectId === "custom" ? null : PIPELINE_PROJECTS.find((p) => p.id === projectId);
 
@@ -352,6 +599,18 @@ export default function BuildPanel({
               )}
             </div>
           </div>
+
+          {/* Project finance — custom assets only */}
+          {!project && (
+            <ProjectFinance
+              tech={asset.tech}
+              capacityMW={asset.mw}
+              captureAUD={result.captureAUD ?? result.avgAfterAUD}
+              prices={history?.regions[asset.region] ?? []}
+              demo={!!history?.demo}
+              macro={macro}
+            />
+          )}
         </>
       )}
     </div>
