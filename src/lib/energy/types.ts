@@ -7,6 +7,7 @@ export type FuelGroup =
   | "hydro"
   | "wind"
   | "solar"
+  | "rooftop"
   | "battery"
   | "bioenergy"
   | "distillate";
@@ -27,7 +28,12 @@ export interface RegionLive {
   lng: number;
   /** Operational demand (load) in MW. */
   demandMW: number;
-  /** Total local generation in MW (sum of fuel mix). */
+  /**
+   * Operational generation in MW — the grid-connected fleet that serves
+   * operational demand. Excludes behind-the-meter rooftop solar (which is
+   * netted out of demand), so generation ≈ demand + net interchange.
+   * The `rooftop` slice still appears in `fuelMix` for display.
+   */
   generationMW: number;
   /** Net interchange in MW, positive = exporting to other regions. */
   netInterchangeMW: number;

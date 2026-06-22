@@ -1,14 +1,11 @@
 import { REGIONS } from "./regions";
 import { DEMO_REGION_DATA } from "./demo-data";
-import { fetchJsonWithHostFallback } from "./sources";
+import { oeFetch, toNetworkNaive, type OeRow } from "./sources";
 
-// Historic spot prices per region.
+// Historic spot prices per region, from the OpenElectricity v4 market API.
 //
-//  - 7d window: OpenElectricity per-region 30-minute price series (the same
-//    7d stats file the live view uses).
-//  - 90d window: daily volume-weighted price derived from the yearly energy
-//    files (explicit price series when present, otherwise market_value /
-//    energy summed across fuel techs).
+//  - 7d window: 5-minute spot price series.
+//  - 90d window: daily average price (interval=1d) directly from the API.
 //
 // When feeds are unreachable a deterministic synthetic series is generated
 // per region (typical double-peak intraday shape, solar midday dip,
@@ -25,93 +22,34 @@ export interface HistoryPayload {
   regions: Record<string, PricePoint[]>;
 }
 
-interface OeSeries {
-  id?: string;
-  type?: string;
-  units?: string;
-  fuel_tech?: string;
-  history?: { start?: string; interval?: string; data?: Array<number | null> };
-}
-
-function intervalToHours(interval: string | undefined): number | null {
-  if (!interval) return null;
-  const m = interval.match(/^(\d+)(m|h|d)$/i);
-  if (!m) return null;
-  const n = Number(m[1]);
-  return m[2] === "m" ? n / 60 : m[2] === "h" ? n : n * 24;
-}
-
-function seriesPoints(series: OeSeries): PricePoint[] {
-  const start = series.history?.start ? Date.parse(series.history.start) : NaN;
-  const hours = intervalToHours(series.history?.interval);
-  const data = series.history?.data;
-  if (!Number.isFinite(start) || !hours || !Array.isArray(data)) return [];
+function rowsToPoints(rows: OeRow[]): PricePoint[] {
   const out: PricePoint[] = [];
-  data.forEach((v, i) => {
-    if (typeof v === "number" && Number.isFinite(v)) {
-      out.push([start + i * hours * 3600_000, v]);
-    }
-  });
-  return out;
-}
-
-async function fetch7dPrices(network: "NEM" | "WEM", region?: string): Promise<PricePoint[]> {
-  const path = region
-    ? `/v3/stats/au/${network}/${region}/power/7d.json`
-    : `/v3/stats/au/${network}/power/7d.json`;
-  const json = (await fetchJsonWithHostFallback(path, 300)) as { data?: OeSeries[] };
-  if (!Array.isArray(json.data)) throw new Error(`unexpected payload ${path}`);
-  const price = json.data.find((s) => s.type === "price" || s.id?.endsWith(".price"));
-  const points = price ? seriesPoints(price) : [];
-  if (points.length < 10) throw new Error(`no price series in ${path}`);
-  return points;
-}
-
-async function fetchDailyPrices(
-  network: "NEM" | "WEM",
-  region: string | undefined,
-  days: number,
-): Promise<PricePoint[]> {
-  const now = new Date();
-  const years = new Set([now.getUTCFullYear()]);
-  const fromMs = now.getTime() - days * 86400_000;
-  years.add(new Date(fromMs).getUTCFullYear());
-
-  const all: PricePoint[] = [];
-  for (const year of [...years].sort()) {
-    const path = region
-      ? `/v3/stats/au/${network}/${region}/energy/${year}.json`
-      : `/v3/stats/au/${network}/energy/${year}.json`;
-    const json = (await fetchJsonWithHostFallback(path, 3600)) as { data?: OeSeries[] };
-    if (!Array.isArray(json.data)) throw new Error(`unexpected payload ${path}`);
-
-    const explicit = json.data.find((s) => s.type === "price" || s.id?.endsWith(".price"));
-    if (explicit) {
-      all.push(...seriesPoints(explicit));
-      continue;
-    }
-    // Derive daily volume-weighted price: sum(market_value) / sum(energy).
-    const value = new Map<number, number>();
-    const energy = new Map<number, number>();
-    for (const s of json.data) {
-      const isValue = s.type === "market_value" || s.id?.includes(".market_value");
-      const isEnergy = s.type === "energy" || s.id?.includes(".energy");
-      if (!isValue && !isEnergy) continue;
-      for (const [ts, v] of seriesPoints(s)) {
-        const map = isValue ? value : energy;
-        map.set(ts, (map.get(ts) ?? 0) + v);
-      }
-    }
-    for (const [ts, mv] of value) {
-      const e = energy.get(ts);
-      // market_value $ / energy GWh -> $/MWh
-      if (e && e > 0) all.push([ts, mv / (e * 1000)]);
-    }
+  for (const [ts, v] of rows) {
+    const ms = Date.parse(ts);
+    if (Number.isFinite(ms) && typeof v === "number" && Number.isFinite(v)) out.push([ms, v]);
   }
-  const cutoff = now.getTime() - days * 86400_000;
-  const points = all.filter(([ts]) => ts >= cutoff).sort((a, b) => a[0] - b[0]);
-  if (points.length < 10) throw new Error(`no daily prices for ${region ?? network}`);
-  return points;
+  return out.sort((a, b) => a[0] - b[0]);
+}
+
+/** Price series per region for a network over the last `days` at `interval`. */
+async function fetchNetworkPrices(
+  network: "NEM" | "WEM",
+  interval: "5m" | "1d",
+  days: number,
+): Promise<Map<string, PricePoint[]>> {
+  const dateStart = toNetworkNaive(network, Date.now() - days * 86400_000);
+  const env = await oeFetch(
+    `/market/network/${network}`,
+    { metrics: "price", interval, primary_grouping: "network_region", date_start: dateStart },
+    interval === "1d" ? 3600 : 300,
+  );
+  const block = env.data.find((b) => b.metric === "price");
+  const out = new Map<string, PricePoint[]>();
+  if (!block) return out;
+  for (const r of block.results) {
+    out.set(r.columns.region ?? network, rowsToPoints(r.data));
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -168,26 +106,28 @@ function synthSeries(code: string, count: number, intervalHours: number, endMs: 
 
 export async function buildHistoryPayload(window: HistoryWindow): Promise<HistoryPayload> {
   const intervalHours = window === "7d" ? 0.5 : 24;
-  const results = await Promise.all(
-    REGIONS.map((r) =>
-      (window === "7d"
-        ? r.network === "WEM"
-          ? fetch7dPrices("WEM")
-          : fetch7dPrices("NEM", r.code)
-        : r.network === "WEM"
-          ? fetchDailyPrices("WEM", undefined, 90)
-          : fetchDailyPrices("NEM", r.code, 90)
-      ).catch(() => null),
-    ),
-  );
+  const interval: "5m" | "1d" = window === "7d" ? "5m" : "1d";
+  const days = window === "7d" ? 7 : 90;
 
-  const anyReal = results.some((p) => p !== null);
+  const [nem, wem] = await Promise.all([
+    fetchNetworkPrices("NEM", interval, days).catch(() => null),
+    fetchNetworkPrices("WEM", interval, days).catch(() => null),
+  ]);
+
   const endMs = Date.now();
   const count = window === "7d" ? 7 * 48 : 90;
 
+  let anyReal = false;
   const regions: Record<string, PricePoint[]> = {};
-  REGIONS.forEach((meta, i) => {
-    regions[meta.code] = results[i] ?? synthSeries(meta.code, count, intervalHours, endMs);
+  REGIONS.forEach((meta) => {
+    const region = meta.network === "WEM" ? "WEM" : meta.code;
+    const pts = (meta.network === "WEM" ? wem : nem)?.get(region) ?? null;
+    if (pts && pts.length >= 10) {
+      anyReal = true;
+      regions[meta.code] = pts;
+    } else {
+      regions[meta.code] = synthSeries(meta.code, count, intervalHours, endMs);
+    }
   });
 
   return { window, intervalHours, demo: !anyReal, regions };

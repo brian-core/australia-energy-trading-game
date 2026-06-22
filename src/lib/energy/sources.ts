@@ -1,4 +1,4 @@
-import { BORDERS, FUEL_META, REGIONS, groupFuelTech } from "./regions";
+import { BORDERS, FUEL_META, REGIONS, groupFuelTech, type RegionMeta } from "./regions";
 import { DEMO_FACILITIES, DEMO_REGION_DATA } from "./demo-data";
 import type {
   Facility,
@@ -80,69 +80,106 @@ async function fetchAemoSummary(): Promise<Map<string, AemoRegionRow>> {
 }
 
 // ---------------------------------------------------------------------------
-// OpenElectricity per-region power (generation by fuel tech)
+// OpenElectricity v4 API (live generation, price, demand)
+//
+// The legacy free /v3/stats buckets were frozen in December 2024 (HTTP 200 but
+// stale). The live data now lives behind the authenticated v4 API. The key is
+// read from OPENELECTRICITY_API_KEY; anonymous access works but is heavily
+// rate-limited, so a key is required for reliable polling.
 
-interface OePowerSeries {
-  id?: string;
-  type?: string;
-  fuel_tech?: string;
-  units?: string;
-  history?: { last?: string; data?: Array<number | null> };
+const OE_API_BASE = (
+  process.env.OPENELECTRICITY_API_URL ?? "https://api.openelectricity.org.au/v4"
+).replace(/\/$/, "");
+const OE_API_KEY = process.env.OPENELECTRICITY_API_KEY;
+
+export type OeRow = [timestamp: string, value: number | null];
+
+export interface OeResult {
+  name: string;
+  columns: { region?: string; fueltech?: string; [k: string]: string | undefined };
+  data: OeRow[];
 }
 
-function lastValue(series: OePowerSeries): number | null {
-  const data = series.history?.data;
-  if (!Array.isArray(data)) return null;
-  for (let i = data.length - 1; i >= 0 && i >= data.length - 6; i--) {
-    const v = data[i];
-    if (typeof v === "number" && Number.isFinite(v)) return v;
+export interface OeBlock {
+  network_code: string;
+  metric: string;
+  unit: string;
+  interval: string;
+  date_start: string;
+  date_end: string;
+  groupings: string[];
+  results: OeResult[];
+}
+
+export interface OeEnvelope {
+  version: string;
+  created_at: string;
+  success: boolean;
+  data: OeBlock[];
+}
+
+export async function oeFetch(
+  path: string,
+  params: Record<string, string | string[]>,
+  revalidate: number,
+): Promise<OeEnvelope> {
+  const usp = new URLSearchParams();
+  for (const [key, val] of Object.entries(params)) {
+    if (Array.isArray(val)) val.forEach((v) => usp.append(key, v));
+    else usp.append(key, val);
+  }
+  const url = `${OE_API_BASE}${path}?${usp.toString()}`;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (OE_API_KEY) headers.Authorization = `Bearer ${OE_API_KEY}`;
+  const res = await fetch(url, { headers, next: { revalidate } });
+  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+  const json = (await res.json()) as OeEnvelope;
+  if (!json.success || !Array.isArray(json.data)) throw new Error(`oe ${path} unsuccessful`);
+  return json;
+}
+
+/** Last finite value (with its timestamp) in a [ts, value] series. */
+export function lastFinite(data: OeRow[]): { ts: string; value: number } | null {
+  for (let i = data.length - 1; i >= 0; i--) {
+    const v = data[i]?.[1];
+    if (typeof v === "number" && Number.isFinite(v)) return { ts: data[i][0], value: v };
   }
   return null;
 }
 
+// The v4 API requires date params to be timezone-naive and expressed in the
+// network's own time (AEMO uses AEST = UTC+10 year-round; WEM uses AWST = UTC+8).
+const NETWORK_OFFSET_H: Record<"NEM" | "WEM", number> = { NEM: 10, WEM: 8 };
+
+/** Format an instant as naive "YYYY-MM-DDTHH:MM:SS" in the network's local time. */
+export function toNetworkNaive(network: "NEM" | "WEM", ms: number): string {
+  return new Date(ms + NETWORK_OFFSET_H[network] * 3600_000).toISOString().slice(0, 19);
+}
+
+/** Naive network-time start `hours` before now (keeps snapshot payloads small). */
+function recentWindow(network: "NEM" | "WEM", hours: number): string {
+  return toNetworkNaive(network, Date.now() - hours * 3600_000);
+}
+
 interface RegionPower {
   fuelMix: FuelSlice[];
+  /** Operational generation (excludes behind-the-meter rooftop solar). */
   generationMW: number;
-  demandMW: number | null;
-  /** Spot/balancing price series when present (WEM publishes one here). */
-  priceAUD: number | null;
+  rooftopMW: number;
   asOf: string | null;
 }
 
-async function fetchRegionPower(network: "NEM" | "WEM", region?: string): Promise<RegionPower> {
-  const path = region
-    ? `/v3/stats/au/${network}/${region}/power/7d.json`
-    : `/v3/stats/au/${network}/power/7d.json`;
-  const json = (await fetchJsonWithHostFallback(path, 55)) as { data?: OePowerSeries[] };
-  if (!Array.isArray(json.data)) throw new Error(`unexpected power payload for ${path}`);
-
+/** Reduce a region's per-fueltech power results into a grouped fuel mix. */
+function buildRegionPower(results: OeResult[]): RegionPower {
   const byGroup = new Map<FuelGroup, number>();
-  let demandMW: number | null = null;
-  let priceAUD: number | null = null;
   let asOf: string | null = null;
-
-  for (const series of json.data) {
-    if (series.history?.last && (!asOf || series.history.last > asOf)) {
-      asOf = series.history.last;
-    }
-    if (series.type === "demand" || series.id?.endsWith(".demand")) {
-      const v = lastValue(series);
-      if (v != null) demandMW = v;
-      continue;
-    }
-    if (series.type === "price" || series.id?.endsWith(".price")) {
-      const v = lastValue(series);
-      if (v != null) priceAUD = v;
-      continue;
-    }
-    if (series.type !== "power" || !series.fuel_tech) continue;
-    const group = groupFuelTech(series.fuel_tech);
-    if (!group) continue;
-    const v = lastValue(series);
-    if (v == null || v <= 0) continue;
-    byGroup.set(group, (byGroup.get(group) ?? 0) + v);
+  for (const r of results) {
+    const group = r.columns.fueltech ? groupFuelTech(r.columns.fueltech) : null;
+    const last = lastFinite(r.data);
+    if (last && (!asOf || last.ts > asOf)) asOf = last.ts;
+    if (!group || !last || last.value <= 0) continue;
+    byGroup.set(group, (byGroup.get(group) ?? 0) + last.value);
   }
-
   const fuelMix = [...byGroup.entries()]
     .sort((a, b) => FUEL_META[a[0]].order - FUEL_META[b[0]].order)
     .map(([tech, mw]) => ({
@@ -151,9 +188,75 @@ async function fetchRegionPower(network: "NEM" | "WEM", region?: string): Promis
       mw: Math.round(mw),
       color: FUEL_META[tech].color,
     }));
-  const generationMW = fuelMix.reduce((sum, s) => sum + s.mw, 0);
-  if (fuelMix.length === 0) throw new Error(`no generation series for ${path}`);
-  return { fuelMix, generationMW, demandMW, priceAUD, asOf };
+  const rooftopMW = Math.round(byGroup.get("rooftop") ?? 0);
+  const generationMW = fuelMix.reduce((sum, s) => (s.tech === "rooftop" ? sum : sum + s.mw), 0);
+  if (fuelMix.length === 0) throw new Error("no generation series");
+  return { fuelMix, generationMW, rooftopMW, asOf };
+}
+
+/** Latest generation by fuel tech for every region of a network, in one call. */
+async function fetchNetworkPower(network: "NEM" | "WEM"): Promise<Map<string, RegionPower>> {
+  const env = await oeFetch(
+    `/data/network/${network}`,
+    {
+      metrics: "power",
+      interval: "5m",
+      primary_grouping: "network_region",
+      secondary_grouping: "fueltech",
+      date_start: recentWindow(network, 3),
+    },
+    55,
+  );
+  const block = env.data.find((b) => b.metric === "power");
+  if (!block || block.results.length === 0) throw new Error(`no power block for ${network}`);
+  const byRegion = new Map<string, OeResult[]>();
+  for (const r of block.results) {
+    const region = r.columns.region ?? network;
+    (byRegion.get(region) ?? byRegion.set(region, []).get(region)!).push(r);
+  }
+  const out = new Map<string, RegionPower>();
+  for (const [region, results] of byRegion) {
+    try {
+      out.set(region, buildRegionPower(results));
+    } catch {
+      /* skip regions with no usable generation */
+    }
+  }
+  return out;
+}
+
+interface MarketRow {
+  priceAUD: number | null;
+  demandMW: number | null;
+  asOf: string | null;
+}
+
+/** Latest price + operational demand per region (used for WEM; NEM uses AEMO). */
+async function fetchNetworkMarket(network: "NEM" | "WEM"): Promise<Map<string, MarketRow>> {
+  const env = await oeFetch(
+    `/market/network/${network}`,
+    {
+      metrics: ["price", "demand"],
+      interval: "5m",
+      primary_grouping: "network_region",
+      date_start: recentWindow(network, 3),
+    },
+    55,
+  );
+  const out = new Map<string, MarketRow>();
+  for (const block of env.data) {
+    for (const r of block.results) {
+      const region = r.columns.region ?? network;
+      const last = lastFinite(r.data);
+      if (!last) continue;
+      const row = out.get(region) ?? { priceAUD: null, demandMW: null, asOf: null };
+      if (block.metric === "price") row.priceAUD = last.value;
+      else if (block.metric === "demand") row.demandMW = last.value;
+      if (!row.asOf || last.ts > row.asOf) row.asOf = last.ts;
+      out.set(region, row);
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +275,8 @@ function demoRegion(code: string): Omit<RegionLive, "code" | "name" | "network" 
   const d = DEMO_REGION_DATA[code];
   return {
     demandMW: d.demandMW,
-    generationMW: d.fuelMix.reduce((sum, s) => sum + s.mw, 0),
+    // Operational generation excludes the rooftop slice (it nets out of demand).
+    generationMW: d.fuelMix.reduce((sum, s) => (s.tech === "rooftop" ? sum : sum + s.mw), 0),
     netInterchangeMW: d.netInterchangeMW,
     priceAUD: d.priceAUD,
     fuelMix: d.fuelMix,
@@ -214,24 +318,26 @@ function solveFlows(regions: Map<string, RegionLive>): InterconnectorFlow[] {
 }
 
 export async function buildLivePayload(): Promise<LivePayload> {
-  const [aemo, powers] = await Promise.all([
+  // Generation comes from one v4 call per network; AEMO covers NEM price/demand/
+  // interchange (it's live and healthy); WEM price/demand come from v4 market.
+  const [aemo, nemPower, wemPower, wemMarket] = await Promise.all([
     fetchAemoSummary().catch(() => null),
-    Promise.all(
-      REGIONS.map((r) =>
-        (r.network === "WEM" ? fetchRegionPower("WEM") : fetchRegionPower("NEM", r.code)).catch(
-          () => null,
-        ),
-      ),
-    ),
+    fetchNetworkPower("NEM").catch(() => null),
+    fetchNetworkPower("WEM").catch(() => null),
+    fetchNetworkMarket("WEM").catch(() => null),
   ]);
 
-  const powerOk = powers.filter((p) => p !== null).length;
+  const powerFor = (meta: RegionMeta): RegionPower | null =>
+    meta.network === "WEM" ? wemPower?.get("WEM") ?? null : nemPower?.get(meta.code) ?? null;
+
+  const powerOk = REGIONS.filter((m) => powerFor(m) !== null).length;
   const demo = !aemo && powerOk === 0;
 
   const regionMap = new Map<string, RegionLive>();
-  REGIONS.forEach((meta, i) => {
-    const power = powers[i];
+  REGIONS.forEach((meta) => {
+    const power = powerFor(meta);
     const aemoRow = aemo?.get(meta.code) ?? null;
+    const wem = meta.network === "WEM" ? wemMarket?.get("WEM") ?? null : null;
     const fallback = demoRegion(meta.code);
 
     const fuelMix = power?.fuelMix ?? fallback.fuelMix;
@@ -239,7 +345,7 @@ export async function buildLivePayload(): Promise<LivePayload> {
     // WEM is islanded: demand ≈ local generation when no demand series exists.
     const demandMW =
       aemoRow?.demandMW ??
-      power?.demandMW ??
+      wem?.demandMW ??
       (power && meta.network === "WEM" ? power.generationMW : fallback.demandMW);
 
     regionMap.set(meta.code, {
@@ -251,12 +357,12 @@ export async function buildLivePayload(): Promise<LivePayload> {
       demandMW: Math.round(demandMW),
       generationMW: Math.round(generationMW),
       netInterchangeMW: Math.round(aemoRow?.netInterchangeMW ?? fallback.netInterchangeMW),
-      // AEMO dispatch price for NEM regions; OpenElectricity balancing price
-      // covers WEM. Demo price only when both feeds are down.
-      priceAUD: aemoRow?.priceAUD ?? power?.priceAUD ?? (demo ? fallback.priceAUD : null),
+      // AEMO dispatch price for NEM regions; v4 market price covers WEM.
+      // Demo price only when both feeds are down.
+      priceAUD: aemoRow?.priceAUD ?? wem?.priceAUD ?? (demo ? fallback.priceAUD : null),
       fuelMix,
       renewableShare: renewableShare(fuelMix),
-      asOf: power?.asOf ?? aemoRow?.asOf ?? null,
+      asOf: power?.asOf ?? aemoRow?.asOf ?? wem?.asOf ?? null,
     });
   });
 
