@@ -129,16 +129,19 @@ export default function LabPanel() {
     () => (rf ? rf.t.map((ts, i) => [ts, rf.priceHat[i]]) : []),
     [rf],
   );
-  const chartBand = useMemo(
-    () =>
-      rf
-        ? {
-            lo: rf.t.map((ts, i) => [ts, rf.priceLo[i]] as PricePoint),
-            hi: rf.t.map((ts, i) => [ts, rf.priceHi[i]] as PricePoint),
-          }
-        : undefined,
-    [rf],
-  );
+  // Monte-Carlo fan (P10-P90 outer, P25-P75 inner) when the history supports
+  // it; the fitted ±1σ band otherwise.
+  const chartBands = useMemo(() => {
+    if (!rf) return undefined;
+    const track = (v: number[]) => rf.t.map((ts, i) => [ts, v[i]] as PricePoint);
+    if (rf.mc) {
+      return [
+        { lo: track(rf.mc.p10), hi: track(rf.mc.p90), opacity: 0.1 },
+        { lo: track(rf.mc.p25), hi: track(rf.mc.p75), opacity: 0.18 },
+      ];
+    }
+    return [{ lo: track(rf.priceLo), hi: track(rf.priceHi) }];
+  }, [rf]);
 
   if (error) return <div className="text-[10px] text-[var(--ink-soft)]">lab feeds unavailable</div>;
   if (!series || !weather || !rf || !fit)
@@ -318,7 +321,7 @@ export default function LabPanel() {
       <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
         <div className="mb-1.5 flex items-center justify-between">
           <span className="text-[10px] tracking-widest text-[var(--ink-soft)]">
-            TIME TRAVEL — PRICE FORECAST ±1σ
+            TIME TRAVEL — PRICE FORECAST {rf.mc ? `· MC ×${rf.mc.runs} P10–P90` : "±1σ"}
           </span>
           <div className="flex overflow-hidden rounded border" style={{ borderColor: "var(--edge)" }}>
             {([24, 48, 72] as const).map((h) => (
@@ -337,7 +340,7 @@ export default function LabPanel() {
             ))}
           </div>
         </div>
-        <PriceChart points={chartPoints} band={chartBand} color={priceColor(cur.price)} />
+        <PriceChart points={chartPoints} bands={chartBands} color={priceColor(cur.price)} />
         <div className="mt-2 flex items-center gap-2">
           <button
             onClick={() => setPlaying((p) => !p)}
@@ -359,8 +362,16 @@ export default function LabPanel() {
           <span className="text-[var(--ink)]">
             {new Date(cur.ts).toLocaleString("en-AU", { weekday: "short", hour: "2-digit", minute: "2-digit" })}
           </span>{" "}
-          · spot <span style={{ color: priceColor(cur.price) }}>${fmt(cur.price)}</span> · load{" "}
-          {fmt(cur.demand / 1000, 1)} GW · wind {fmt(cur.wind)} MW · solar {fmt(cur.solar)} MW ·{" "}
+          · spot <span style={{ color: priceColor(cur.price) }}>${fmt(cur.price)}</span>
+          {rf.mc && (
+            <>
+              {" "}
+              <span className="text-[9px]">
+                (P10 ${fmt(rf.mc.p10[cursorIdx])} – P90 ${fmt(rf.mc.p90[cursorIdx])})
+              </span>
+            </>
+          )}{" "}
+          · load {fmt(cur.demand / 1000, 1)} GW · wind {fmt(cur.wind)} MW · solar {fmt(cur.solar)} MW ·{" "}
           {fmt(cur.temp, 1)}°C / {fmt(cur.windMs, 1)} m/s
         </div>
         {deskOnForecast && (

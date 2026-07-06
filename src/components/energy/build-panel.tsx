@@ -255,6 +255,31 @@ function ProjectFinance({
             IRR P10–P90 {irrPct(mc.irrP10)} – {irrPct(mc.irrP90)}
             {demo && " · SYNTHETIC HISTORY"}
           </div>
+
+          {/* Lifetime capture-price fan — the sampled price paths behind the
+              NPV distribution, so the chart and the finance numbers agree. */}
+          {mc.priceP50.length > 1 && (
+            <div className="mt-2">
+              <div className="mb-0.5 text-[9px] tracking-widest text-[var(--ink-soft)]">
+                CAPTURE PRICE PATH — MC P10–P90 · $/MWH NOMINAL
+              </div>
+              <PriceChart
+                points={mc.priceP50.map((v, i) => [fin.commissioningYear + i, v])}
+                bands={[
+                  {
+                    lo: mc.priceP10.map((v, i) => [fin.commissioningYear + i, v]),
+                    hi: mc.priceP90.map((v, i) => [fin.commissioningYear + i, v]),
+                    opacity: 0.12,
+                  },
+                ]}
+                height={48}
+              />
+              <div className="mt-0.5 text-[9px] text-[var(--ink-soft)]">
+                {fin.commissioningYear} → {fin.commissioningYear + mc.priceP50.length - 1} · yr1 P50 $
+                {Math.round(mc.priceP50[0])} → final P50 ${Math.round(mc.priceP50[mc.priceP50.length - 1])}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
