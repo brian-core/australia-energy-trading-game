@@ -47,14 +47,14 @@ function NumberField({
   width?: number;
 }) {
   return (
-    <label className="flex items-center justify-between gap-2 text-[10px] text-[var(--ink-soft)]">
+    <label className="flex items-center justify-between gap-2 text-[11px] text-[var(--ink-soft)]">
       <span>{label}</span>
       <input
         type="number"
         value={value}
         step={step}
         onChange={(e) => onChange(Number(e.target.value) || 0)}
-        className="rounded border bg-black/30 px-1.5 py-0.5 text-right text-[11px] text-[var(--ink)]"
+        className="rounded border bg-black/30 px-1.5 py-0.5 text-right text-xs text-[var(--ink)]"
         style={{ borderColor: "var(--edge)", width }}
       />
     </label>
@@ -167,41 +167,41 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
   const netRetailAUD = (state.book.flatRateCkwh - state.book.nonEnergyCkwh) * 10;
 
   return (
-    <div className="space-y-3 font-[family-name:var(--f-mono)] text-[11px]">
-      <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">
+    <div className="space-y-3 font-[family-name:var(--f-mono)] text-xs">
+      <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">
         SYNTHETIC DESK — PAPER TRADES ONLY, MARKED AGAINST LIVE 5-MIN SPOT
       </div>
 
       {/* Portfolio summary */}
-      <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
+      <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
         <div className="grid grid-cols-3 gap-2">
           <div>
-            <div className="text-sm" style={{ color: view.marginPerH >= 0 ? "var(--gen)" : "#e2483d" }}>
+            <div className="text-base" style={{ color: view.marginPerH >= 0 ? "var(--gen)" : "#e2483d" }}>
               {money(view.marginPerH)}/h
             </div>
-            <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">MARGIN NOW</div>
+            <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">MARGIN NOW</div>
           </div>
           <div>
-            <div className="text-sm">{money(view.marginPerDay)}</div>
-            <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">PER DAY</div>
+            <div className="text-base">{money(view.marginPerDay)}</div>
+            <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">PER DAY</div>
           </div>
           <div>
-            <div className="text-sm">{Math.round(view.coverage * 100)}%</div>
-            <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">HEDGED</div>
+            <div className="text-base">{Math.round(view.coverage * 100)}%</div>
+            <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">HEDGED</div>
           </div>
         </div>
-        <div className="mt-1.5 text-[10px] text-[var(--ink-soft)]">
+        <div className="mt-1.5 text-[11px] text-[var(--ink-soft)]">
           revenue {money(view.revenuePerH)}/h · energy cost {money(view.energyCostPerH)}/h · net retail $
           {netRetailAUD.toFixed(0)}/MWh
         </div>
-        <div className="mt-1 text-[10px]" style={{ color: view.stressMarginPerH >= 0 ? "var(--gen)" : "#e2483d" }}>
+        <div className="mt-1 text-[11px]" style={{ color: view.stressMarginPerH >= 0 ? "var(--gen)" : "#e2483d" }}>
           stress @ ${STRESS_SPOT_AUD.toLocaleString()}: {money(view.stressMarginPerH)}/h
         </div>
       </div>
 
       {/* Book settings */}
-      <details className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }} open>
-        <summary className="cursor-pointer text-[10px] tracking-widest text-[var(--ink-soft)]">
+      <details className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }} open>
+        <summary className="cursor-pointer text-[11px] tracking-widest text-[var(--ink-soft)]">
           BOOK — FLAT-RATE SUBSCRIPTION
         </summary>
         <div className="mt-2 space-y-1.5">
@@ -209,7 +209,7 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
           <NumberField label="non-energy cost (c/kWh)" value={state.book.nonEnergyCkwh} step={0.5} onChange={(v) => setBook({ nonEnergyCkwh: v })} />
           <NumberField label="coverage target (%)" value={Math.round(state.book.targetCoverage * 100)} onChange={(v) => setBook({ targetCoverage: Math.max(0, v) / 100 })} />
           <NumberField label="buy signal ($/MWh)" value={state.book.buySignalAUD} step={5} onChange={(v) => setBook({ buySignalAUD: v })} />
-          <div className="pt-1 text-[10px] tracking-widest text-[var(--ink-soft)]">CUSTOMER LOAD (MW)</div>
+          <div className="pt-1 text-[11px] tracking-widest text-[var(--ink-soft)]">CUSTOMER LOAD (MW)</div>
           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
             {live.regions.map((r) => (
               <NumberField
@@ -228,11 +228,11 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
       </details>
 
       {/* Positions */}
-      <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
-        <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">POSITIONS</div>
-        <table className="w-full text-[10px]">
+      <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+        <div className="mb-1.5 text-[11px] tracking-widest text-[var(--ink-soft)]">POSITIONS</div>
+        <table className="w-full text-[11px]">
           <thead>
-            <tr className="text-left text-[9px] tracking-wider text-[var(--ink-soft)]">
+            <tr className="text-left text-[10px] tracking-wider text-[var(--ink-soft)]">
               <th>RGN</th>
               <th className="text-right">LOAD</th>
               <th className="text-right">SPOT</th>
@@ -263,8 +263,8 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
       </div>
 
       {/* Trade ticket */}
-      <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
-        <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">NEW PAPER TRADE</div>
+      <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+        <div className="mb-1.5 text-[11px] tracking-widest text-[var(--ink-soft)]">NEW PAPER TRADE</div>
         <div className="flex flex-wrap items-center gap-1.5">
           <select
             value={ticket.region}
@@ -323,7 +323,7 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
           )}
           <button
             onClick={addTrade}
-            className="rounded px-2 py-0.5 text-[10px] tracking-widest"
+            className="rounded px-2 py-0.5 text-[11px] tracking-widest"
             style={{ background: "var(--gen)", color: "#0b0d11" }}
           >
             BOOK
@@ -333,15 +333,15 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
 
       {/* Blotter */}
       {state.trades.length > 0 && (
-        <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
-          <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">
+        <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+          <div className="mb-1.5 text-[11px] tracking-widest text-[var(--ink-soft)]">
             BLOTTER · MTM AT CURRENT SPOT
           </div>
           <div className="space-y-1">
             {state.trades.map((t) => {
               const mtm = tradeMtmPerH(t, spotByRegion.get(t.region) ?? null);
               return (
-                <div key={t.id} className="flex items-center justify-between gap-2 text-[10px]">
+                <div key={t.id} className="flex items-center justify-between gap-2 text-[11px]">
                   <span>
                     {t.kind.toUpperCase()} {t.region.replace(/\d$/, "")} {t.mw}MW @ ${t.strikeAUD}
                     {t.kind === "cap" ? ` (prem $${t.premiumAUD})` : ""}
@@ -366,9 +366,9 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
       )}
 
       {/* Backtest */}
-      <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
+      <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
         <div className="mb-1.5 flex items-center justify-between">
-          <span className="text-[10px] tracking-widest text-[var(--ink-soft)]">
+          <span className="text-[11px] tracking-widest text-[var(--ink-soft)]">
             BACKTEST — BOOK & TRADES AS-IF HELD
           </span>
           <div className="flex overflow-hidden rounded border" style={{ borderColor: "var(--edge)" }}>
@@ -376,7 +376,7 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
               <button
                 key={w}
                 onClick={() => setBtWindow(w)}
-                className="px-1.5 py-0.5 text-[9px] tracking-widest uppercase"
+                className="px-1.5 py-0.5 text-[10px] tracking-widest uppercase"
                 style={
                   btWindow === w
                     ? { background: "var(--gen)", color: "#0b0d11" }
@@ -389,28 +389,28 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
           </div>
         </div>
         {!backtest ? (
-          <div className="text-[10px] text-[var(--ink-soft)]">
+          <div className="text-[11px] text-[var(--ink-soft)]">
             {historyError ? "history feed unavailable" : "loading price history…"}
           </div>
         ) : (
           <>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <div className="text-sm" style={{ color: backtest.marginAUD >= 0 ? "var(--gen)" : "#e2483d" }}>
+                <div className="text-base" style={{ color: backtest.marginAUD >= 0 ? "var(--gen)" : "#e2483d" }}>
                   {money(backtest.marginAUD)}
                 </div>
-                <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">MARGIN {btWindow.toUpperCase()}</div>
+                <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">MARGIN {btWindow.toUpperCase()}</div>
               </div>
               <div>
-                <div className="text-sm">
+                <div className="text-base">
                   {backtest.marginPerMWh >= 0 ? "$" : "−$"}
                   {Math.abs(backtest.marginPerMWh).toFixed(0)}
                 </div>
-                <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">PER MWH</div>
+                <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">PER MWH</div>
               </div>
               <div>
-                <div className="text-sm">{Math.round(backtest.underwaterShare * 100)}%</div>
-                <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">TIME UNDERWATER</div>
+                <div className="text-base">{Math.round(backtest.underwaterShare * 100)}%</div>
+                <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">TIME UNDERWATER</div>
               </div>
             </div>
             <div className="mt-2">
@@ -420,7 +420,7 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
                 fillToZero
               />
             </div>
-            <div className="mt-1 space-y-0.5 text-[10px] text-[var(--ink-soft)]">
+            <div className="mt-1 space-y-0.5 text-[11px] text-[var(--ink-soft)]">
               {backtest.regions.map((r) => (
                 <div key={r.code} className="flex justify-between">
                   <span>
@@ -431,7 +431,7 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
                 </div>
               ))}
             </div>
-            <div className="mt-1.5 text-[9px] leading-snug text-[var(--ink-soft)]">
+            <div className="mt-1.5 text-[10px] leading-snug text-[var(--ink-soft)]">
               cumulative margin, {btWindow === "7d" ? "30-min" : "daily VWA"} prices
               {btWindow === "90d" && " — daily averaging understates cap payouts in short spikes"}
               {backtest.demo && " · SYNTHETIC HISTORY (feeds unreachable)"}
@@ -441,26 +441,26 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
       </div>
 
       {/* Signals */}
-      <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
+      <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
         <div className="mb-1.5 flex items-center justify-between">
-          <span className="text-[10px] tracking-widest text-[var(--ink-soft)]">SIGNALS</span>
+          <span className="text-[11px] tracking-widest text-[var(--ink-soft)]">SIGNALS</span>
           <button
             onClick={requestNotify}
-            className="rounded border px-1.5 py-0.5 text-[9px] tracking-widest text-[var(--ink-soft)]"
+            className="rounded border px-1.5 py-0.5 text-[10px] tracking-widest text-[var(--ink-soft)]"
             style={{ borderColor: "var(--edge)" }}
           >
             {notify ? "NOTIFYING ✓" : "ENABLE BROWSER ALERTS"}
           </button>
         </div>
         {alerts.length === 0 ? (
-          <div className="text-[10px] text-[var(--ink-soft)]">
+          <div className="text-[11px] text-[var(--ink-soft)]">
             No signals yet — they fire when spot crosses your buy threshold, coverage gaps open
             during spikes, prices go negative, or a region serves at a loss.
           </div>
         ) : (
           <div className="max-h-48 space-y-1.5 overflow-y-auto hud-scroll">
             {alerts.map((a) => (
-              <div key={a.key + a.at} className="flex gap-1.5 text-[10px] leading-snug">
+              <div key={a.key + a.at} className="flex gap-1.5 text-[11px] leading-snug">
                 <span style={{ color: SEVERITY_COLOR[a.severity] }}>
                   {a.severity === "buy" ? "▲" : a.severity === "warn" ? "⚠" : "ℹ"}
                 </span>

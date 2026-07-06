@@ -167,15 +167,15 @@ function SpotHistoryCard({
   return (
     <div className="mt-3 border-t pt-3 font-[family-name:var(--f-mono)]" style={{ borderColor: "var(--edge)" }}>
       <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-[10px] tracking-widest text-[var(--ink-soft)]">SPOT — LAST 7 DAYS</span>
-        {history?.demo && <span className="text-[9px] text-[#f2c14e]">SYNTHETIC</span>}
+        <span className="text-[11px] tracking-widest text-[var(--ink-soft)]">SPOT — LAST 7 DAYS</span>
+        {history?.demo && <span className="text-[10px] text-[#f2c14e]">SYNTHETIC</span>}
       </div>
       <div className="mb-2 flex flex-wrap gap-1">
         {regions.map((r) => (
           <button
             key={r.code}
             onClick={() => onSelectRegion(r.code)}
-            className="rounded border px-1.5 py-0.5 text-[9px] tracking-wider"
+            className="rounded border px-1.5 py-0.5 text-[10px] tracking-wider"
             style={
               r.code === regionCode
                 ? { background: "var(--gen)", color: "#0b0d11", borderColor: "var(--gen)" }
@@ -187,11 +187,11 @@ function SpotHistoryCard({
         ))}
       </div>
       {!history ? (
-        <div className="text-[10px] text-[var(--ink-soft)]">loading price history…</div>
+        <div className="text-[11px] text-[var(--ink-soft)]">loading price history…</div>
       ) : (
         <>
           <PriceChart points={points} color={priceColor(avg)} />
-          <div className="mt-1 text-[10px] text-[var(--ink-soft)]">
+          <div className="mt-1 text-[11px] text-[var(--ink-soft)]">
             avg ${Math.round(avg)}/MWh ({spotAsCkwh(avg).toFixed(1)}c/kWh)
             {negShare > 0 && <> · negative {Math.round(negShare * 100)}% of intervals</>}
           </div>
@@ -399,27 +399,11 @@ export default function EnergyMap() {
   const updated = live ? new Date(live.updatedAt) : null;
 
   return (
-    <div ref={containerRef} className="fixed inset-0 overflow-hidden">
-      {size.width > 0 && (
-        <EnergyGlobe
-          regions={live?.regions ?? []}
-          flows={live?.flows ?? []}
-          facilities={facilities?.facilities ?? []}
-          selectedRegion={selected}
-          onSelectRegion={setSelected}
-          onSelectFacility={setFacilityDetail}
-          mode={mode}
-          scenarioSite={tab === "build" ? scenarioSite : null}
-          ownedAssets={game.state.fleet}
-          flyTo={flyTo}
-          width={size.width}
-          height={size.height}
-        />
-      )}
-
-      {/* HUD panel: floating card on desktop, bottom sheet on mobile */}
+    <div className="fixed inset-0 overflow-hidden md:flex">
+      {/* Report column: the primary reading surface on desktop (the globe is
+          the supporting visual); bottom sheet on mobile. */}
       <div
-        className="absolute z-10 flex flex-col rounded-xl border backdrop-blur max-md:inset-x-0 max-md:bottom-0 max-md:max-h-[80dvh] max-md:rounded-b-none max-md:border-b-0 md:left-4 md:top-4 md:w-[330px] md:max-h-[calc(100vh-2rem)]"
+        className="z-10 flex flex-col rounded-xl border backdrop-blur max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:max-h-[80dvh] max-md:rounded-b-none max-md:border-b-0 md:m-4 md:h-[calc(100vh-2rem)] md:w-[440px] md:shrink-0 lg:w-[560px] xl:w-[640px]"
         style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
       >
         <div
@@ -434,7 +418,7 @@ export default function EnergyMap() {
             </span>
           </div>
           <div
-            className="mt-2 flex w-fit overflow-hidden rounded-md border font-[family-name:var(--f-mono)] text-[10px] tracking-widest"
+            className="mt-2 flex w-fit overflow-hidden rounded-md border font-[family-name:var(--f-mono)] text-[11px] tracking-widest"
             style={{ borderColor: "var(--edge)" }}
           >
             {(["power", "price", "desk", "build", "ops", "lab"] as const).map((m) => (
@@ -520,21 +504,21 @@ export default function EnergyMap() {
                 <div className="text-base" style={{ color: "var(--gen)" }}>
                   {fmtMW(live.national.generationMW)}
                 </div>
-                <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">GENERATION</div>
+                <div className="text-[11px] tracking-widest text-[var(--ink-soft)]">GENERATION</div>
               </div>
               <div>
                 <div className="text-base" style={{ color: "var(--load)" }}>
                   {fmtMW(live.national.demandMW)}
                 </div>
-                <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">DEMAND</div>
+                <div className="text-[11px] tracking-widest text-[var(--ink-soft)]">DEMAND</div>
               </div>
               <div>
                 <div className="text-base">{pct(live.national.renewableShare)}</div>
-                <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">RENEWABLE</div>
+                <div className="text-[11px] tracking-widest text-[var(--ink-soft)]">RENEWABLE</div>
               </div>
             </div>
             {live.national.avgSpotAUD != null && (
-              <div className="mt-2 font-[family-name:var(--f-mono)] text-[10px] text-[var(--ink-soft)]">
+              <div className="mt-2 font-[family-name:var(--f-mono)] text-[11px] text-[var(--ink-soft)]">
                 avg merchant spot{" "}
                 <span style={{ color: priceColor(live.national.avgSpotAUD) }}>
                   ${live.national.avgSpotAUD.toFixed(0)}/MWh
@@ -549,7 +533,7 @@ export default function EnergyMap() {
               {live.national.fuelMix.map((s) => (
                 <span
                   key={s.tech}
-                  className="inline-flex items-center gap-1 font-[family-name:var(--f-mono)] text-[10px] text-[var(--ink-soft)]"
+                  className="inline-flex items-center gap-1 font-[family-name:var(--f-mono)] text-[11px] text-[var(--ink-soft)]"
                 >
                   <span className="h-2 w-2 rounded-sm" style={{ background: s.color }} />
                   {s.label} {fmtMW(s.mw)}
@@ -579,59 +563,61 @@ export default function EnergyMap() {
         </div>
       </div>
 
-      {/* Region cards: right rail, desktop only (mobile gets them in the sheet) */}
-      <div className="absolute hidden gap-2 hud-scroll md:right-4 md:top-4 md:bottom-4 md:flex md:w-72 md:flex-col md:overflow-y-auto">
-        {(live?.regions ?? []).map((region) => (
-          <RegionCard
-            key={region.code}
-            region={region}
-            selected={selected === region.code}
-            onSelect={() => setSelected(selected === region.code ? null : region.code)}
+      {/* Globe area: fills whatever the report column leaves. Region rail,
+          facility card and map key overlay the globe, not the report. */}
+      <div
+        ref={containerRef}
+        className="max-md:absolute max-md:inset-0 md:relative md:order-2 md:min-w-0 md:flex-1"
+      >
+        {size.width > 0 && (
+          <EnergyGlobe
+            regions={live?.regions ?? []}
+            flows={live?.flows ?? []}
+            facilities={facilities?.facilities ?? []}
+            selectedRegion={selected}
+            onSelectRegion={setSelected}
+            onSelectFacility={setFacilityDetail}
+            mode={mode}
+            scenarioSite={tab === "build" ? scenarioSite : null}
+            ownedAssets={game.state.fleet}
+            flyTo={flyTo}
+            width={size.width}
+            height={size.height}
           />
-        ))}
-        {selected && (
-          <button
-            onClick={() => setSelected(null)}
-            className="shrink-0 rounded-lg border px-3 py-2 font-[family-name:var(--f-mono)] text-[10px] tracking-widest text-[var(--ink-soft)]"
-            style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
-          >
-            ⤺ RESET VIEW
-          </button>
         )}
-      </div>
 
-      {facilityDetail && (
-        <FacilityCard
-          facility={facilityDetail}
-          spotAUD={live?.regions.find((r) => r.code === facilityDetail.region)?.priceAUD ?? null}
-          onClose={() => setFacilityDetail(null)}
-          onEnterSite={enterSite}
-        />
-      )}
+        {/* Region cards: right rail, desktop only (mobile gets them in the sheet) */}
+        <div className="absolute hidden gap-2 hud-scroll md:right-4 md:top-4 md:bottom-4 md:flex md:w-64 md:flex-col md:overflow-y-auto">
+          {(live?.regions ?? []).map((region) => (
+            <RegionCard
+              key={region.code}
+              region={region}
+              selected={selected === region.code}
+              onSelect={() => setSelected(selected === region.code ? null : region.code)}
+            />
+          ))}
+          {selected && (
+            <button
+              onClick={() => setSelected(null)}
+              className="shrink-0 rounded-lg border px-3 py-2 font-[family-name:var(--f-mono)] text-[10px] tracking-widest text-[var(--ink-soft)]"
+              style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
+            >
+              ⤺ RESET VIEW
+            </button>
+          )}
+        </div>
 
-      {siteFacility && (
-        <AssetScene
-          facility={siteFacility}
-          game={game}
-          spotAUD={live?.regions.find((r) => r.code === siteFacility.region)?.priceAUD ?? null}
-          estLiveMW={(() => {
-            // Estimate this site's live output: regional fuel-tech generation
-            // split by capacity share among same-fuel facilities.
-            const region = live?.regions.find((r) => r.code === siteFacility.region);
-            const slice = region?.fuelMix.find((f) => f.tech === siteFacility.fuel);
-            const peers = facilities?.facilities.filter(
-              (f) => f.region === siteFacility.region && f.fuel === siteFacility.fuel,
-            );
-            const capSum = peers?.reduce((sum, f) => sum + f.capacityMW, 0) ?? 0;
-            if (!slice || capSum <= 0) return null;
-            return (slice.mw * siteFacility.capacityMW) / capSum;
-          })()}
-          onClose={exitSite}
-        />
-      )}
+        {facilityDetail && (
+          <FacilityCard
+            facility={facilityDetail}
+            spotAUD={live?.regions.find((r) => r.code === facilityDetail.region)?.priceAUD ?? null}
+            onClose={() => setFacilityDetail(null)}
+            onEnterSite={enterSite}
+          />
+        )}
 
-      {/* Bottom-left: map key + attribution (hidden while desk/build use the column) */}
-      {tab !== "desk" && tab !== "build" && tab !== "ops" && tab !== "lab" && (
+        {/* Bottom-left: map key + attribution (hidden while desk/build use the column) */}
+        {tab !== "desk" && tab !== "build" && tab !== "ops" && tab !== "lab" && (
       <div
         className="absolute bottom-4 left-4 rounded-xl border p-3 font-[family-name:var(--f-mono)] text-[10px] text-[var(--ink-soft)] backdrop-blur max-md:hidden"
         style={{ background: "var(--panel)", borderColor: "var(--edge)" }}
@@ -667,6 +653,28 @@ export default function EnergyMap() {
           {facilities?.demo && <> · station list: built-in sample</>}
         </div>
       </div>
+        )}
+      </div>
+
+      {siteFacility && (
+        <AssetScene
+          facility={siteFacility}
+          game={game}
+          spotAUD={live?.regions.find((r) => r.code === siteFacility.region)?.priceAUD ?? null}
+          estLiveMW={(() => {
+            // Estimate this site's live output: regional fuel-tech generation
+            // split by capacity share among same-fuel facilities.
+            const region = live?.regions.find((r) => r.code === siteFacility.region);
+            const slice = region?.fuelMix.find((f) => f.tech === siteFacility.fuel);
+            const peers = facilities?.facilities.filter(
+              (f) => f.region === siteFacility.region && f.fuel === siteFacility.fuel,
+            );
+            const capSum = peers?.reduce((sum, f) => sum + f.capacityMW, 0) ?? 0;
+            if (!slice || capSum <= 0) return null;
+            return (slice.mw * siteFacility.capacityMW) / capSum;
+          })()}
+          onClose={exitSite}
+        />
       )}
     </div>
   );

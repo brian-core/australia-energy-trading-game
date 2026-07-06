@@ -51,8 +51,8 @@ export default function AccountCard({ game }: { game: GameApi }) {
   if (!cloudEnabled()) return null;
 
   return (
-    <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
-      <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">
+    <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+      <div className="mb-1.5 text-[11px] tracking-widest text-[var(--ink-soft)]">
         ACCOUNT — CLOUD SAVE & LEADERBOARD
       </div>
       {!session ? (
@@ -63,7 +63,7 @@ export default function AccountCard({ game }: { game: GameApi }) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@email.com"
-              className="flex-1 rounded border bg-black/30 px-1.5 py-1 text-[11px]"
+              className="flex-1 rounded border bg-black/30 px-1.5 py-1 text-xs"
               style={{ borderColor: "var(--edge)" }}
             />
             <button
@@ -73,27 +73,27 @@ export default function AccountCard({ game }: { game: GameApi }) {
                 );
               }}
               disabled={!email.includes("@")}
-              className="rounded px-2 py-1 text-[10px] tracking-widest disabled:opacity-30"
+              className="rounded px-2 py-1 text-[11px] tracking-widest disabled:opacity-30"
               style={{ background: "var(--gen)", color: "#0b0d11" }}
             >
               SIGN UP
             </button>
           </div>
-          {status && <div className="text-[10px] text-[var(--ink-soft)]">{status}</div>}
-          <div className="text-[9px] leading-snug text-[var(--ink-soft)]">
+          {status && <div className="text-[11px] text-[var(--ink-soft)]">{status}</div>}
+          <div className="text-[10px] leading-snug text-[var(--ink-soft)]">
             No password — we email you a magic link. Without an account your game saves in this
             browser only.
           </div>
         </div>
       ) : (
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-[10px] text-[var(--ink-soft)]">
+          <div className="flex items-center justify-between text-[11px] text-[var(--ink-soft)]">
             <span className="truncate">{session.user.email} · saving to cloud ✓</span>
             <button onClick={() => void signOut()} className="hover:text-[#e2483d]">
               SIGN OUT
             </button>
           </div>
-          <div className="flex items-center gap-1.5 text-[10px]">
+          <div className="flex items-center gap-1.5 text-[11px]">
             <span className="text-[var(--ink-soft)]">leaderboard name</span>
             <input
               value={handle}
@@ -111,7 +111,7 @@ export default function AccountCard({ game }: { game: GameApi }) {
               {board.map((row, i) => (
                 <div
                   key={row.user_id}
-                  className="flex justify-between text-[10px]"
+                  className="flex justify-between text-[11px]"
                   style={{
                     color: row.user_id === session.user.id ? "var(--gen)" : "var(--ink-soft)",
                   }}

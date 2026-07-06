@@ -151,9 +151,9 @@ export default function LabPanel() {
     return [{ lo: track(rf.priceLo), hi: track(rf.priceHi) }];
   }, [rf]);
 
-  if (error) return <div className="text-[10px] text-[var(--ink-soft)]">lab feeds unavailable</div>;
+  if (error) return <div className="text-[11px] text-[var(--ink-soft)]">lab feeds unavailable</div>;
   if (!series || !weather || !rf || !fit)
-    return <div className="text-[10px] text-[var(--ink-soft)]">fitting models to the last 7 days…</div>;
+    return <div className="text-[11px] text-[var(--ink-soft)]">fitting models to the last 7 days…</div>;
 
   const wNow = weather.regions[region];
   const nowI = Math.max(wNow.nowIdx - 1, 0);
@@ -168,8 +168,8 @@ export default function LabPanel() {
   };
 
   return (
-    <div className="space-y-3 font-[family-name:var(--f-mono)] text-[11px]">
-      <div className="text-[9px] leading-snug tracking-widest text-[var(--ink-soft)]">
+    <div className="space-y-3 font-[family-name:var(--f-mono)] text-xs">
+      <div className="text-[10px] leading-snug tracking-widest text-[var(--ink-soft)]">
         LAB — WEATHER↔GRID STATISTICS AND A FORWARD SIMULATION. TRANSPARENT FITS, NOT AI.
         {(series.demo || weather.demo) && " · SYNTHETIC FEEDS"}
       </div>
@@ -179,7 +179,7 @@ export default function LabPanel() {
           <button
             key={c}
             onClick={() => setRegion(c)}
-            className="rounded border px-1.5 py-0.5 text-[9px] tracking-wider"
+            className="rounded border px-1.5 py-0.5 text-[10px] tracking-wider"
             style={
               c === region
                 ? { background: "var(--gen)", color: "#0b0d11", borderColor: "var(--gen)" }
@@ -192,30 +192,30 @@ export default function LabPanel() {
       </div>
 
       {/* Weather now */}
-      <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
-        <div className="mb-1 text-[10px] tracking-widest text-[var(--ink-soft)]">WEATHER NOW</div>
-        <div className="grid grid-cols-3 gap-2 text-[10px]">
+      <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+        <div className="mb-1 text-[11px] tracking-widest text-[var(--ink-soft)]">WEATHER NOW</div>
+        <div className="grid grid-cols-3 gap-2 text-[11px]">
           <div>
-            <div className="text-sm">{fmt(wNow.capital.tempC[nowI], 1)}°C</div>
-            <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">CAPITAL TEMP</div>
+            <div className="text-base">{fmt(wNow.capital.tempC[nowI], 1)}°C</div>
+            <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">CAPITAL TEMP</div>
           </div>
           <div>
-            <div className="text-sm">{fmt(wNow.belt.windMs[nowI], 1)} m/s</div>
-            <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">BELT WIND 100M</div>
+            <div className="text-base">{fmt(wNow.belt.windMs[nowI], 1)} m/s</div>
+            <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">BELT WIND 100M</div>
           </div>
           <div>
-            <div className="text-sm">{fmt(wNow.belt.radWm2[nowI])} W/m²</div>
-            <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">SOLAR RADIATION</div>
+            <div className="text-base">{fmt(wNow.belt.radWm2[nowI])} W/m²</div>
+            <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">SOLAR RADIATION</div>
           </div>
         </div>
       </div>
 
       {/* Correlations + fits */}
-      <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
-        <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">
+      <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+        <div className="mb-1.5 text-[11px] tracking-widest text-[var(--ink-soft)]">
           7-DAY CORRELATIONS (PEARSON r, SPIKE-TRIMMED)
         </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
           {(
             [
               ["price ↔ demand", fit.corr.priceDemand],
@@ -237,7 +237,7 @@ export default function LabPanel() {
             <span>${fmt(fit.sigma.price)}</span>
           </div>
         </div>
-        <div className="mt-2 border-t pt-1.5 text-[9px] leading-relaxed text-[var(--ink-soft)]" style={{ borderColor: "var(--edge)" }}>
+        <div className="mt-2 border-t pt-1.5 text-[10px] leading-relaxed text-[var(--ink-soft)]" style={{ borderColor: "var(--edge)" }}>
           fitted models: price ~ {fit.priceModel.basis === "utilisation" ? "thermal utilisation" : fit.priceModel.basis === "residual" ? "residual demand" : "hour-of-day profile (regressions weak this week)"}
           {" "}(R² {fmt(fit.priceModel.r2, 2)}) · demand R² {fmt(fit.demandModel.r2, 2)} (+
           {fmt(fit.demandModel.coolPerDeg)} MW/°C cooling) · wind R² {fmt(fit.windModel.r2, 2)} ·
@@ -247,36 +247,36 @@ export default function LabPanel() {
 
       {/* Outage watch */}
       {fit.outage.peak7dMW > 250 && (
-        <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
+        <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
           <div className="mb-1 flex items-center justify-between">
-            <span className="text-[10px] tracking-widest text-[var(--ink-soft)]">
+            <span className="text-[11px] tracking-widest text-[var(--ink-soft)]">
               OUTAGE WATCH — THERMAL FLEET
             </span>
             {fit.outage.impliedOutMW > fit.outage.peak7dMW * 0.08 ? (
-              <span className="rounded px-1.5 py-0.5 text-[9px] tracking-widest" style={{ background: "#e2483d", color: "#0b0d11" }}>
+              <span className="rounded px-1.5 py-0.5 text-[10px] tracking-widest" style={{ background: "#e2483d", color: "#0b0d11" }}>
                 CAPACITY DOWN
               </span>
             ) : (
-              <span className="text-[9px] tracking-widest" style={{ color: "var(--gen)" }}>NORMAL</span>
+              <span className="text-[10px] tracking-widest" style={{ color: "var(--gen)" }}>NORMAL</span>
             )}
           </div>
-          <div className="grid grid-cols-3 gap-2 text-[10px]">
+          <div className="grid grid-cols-3 gap-2 text-[11px]">
             <div>
-              <div className="text-sm">{(fit.outage.availNowMW / 1000).toFixed(1)} GW</div>
-              <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">AVAILABLE NOW</div>
+              <div className="text-base">{(fit.outage.availNowMW / 1000).toFixed(1)} GW</div>
+              <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">AVAILABLE NOW</div>
             </div>
             <div>
-              <div className="text-sm">{(fit.outage.peak7dMW / 1000).toFixed(1)} GW</div>
-              <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">7-DAY PEAK</div>
+              <div className="text-base">{(fit.outage.peak7dMW / 1000).toFixed(1)} GW</div>
+              <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">7-DAY PEAK</div>
             </div>
             <div>
-              <div className="text-sm" style={{ color: fit.outage.impliedOutMW > fit.outage.peak7dMW * 0.08 ? "#e2483d" : "var(--ink)" }}>
+              <div className="text-base" style={{ color: fit.outage.impliedOutMW > fit.outage.peak7dMW * 0.08 ? "#e2483d" : "var(--ink)" }}>
                 {fit.outage.impliedOutMW} MW
               </div>
-              <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">IMPLIED OFFLINE</div>
+              <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">IMPLIED OFFLINE</div>
             </div>
           </div>
-          <div className="mt-1.5 text-[9px] leading-snug text-[var(--ink-soft)]">
+          <div className="mt-1.5 text-[10px] leading-snug text-[var(--ink-soft)]">
             availability = rolling 48h max of coal+gas output. Lost capacity feeds straight into
             the price model{fit.priceModel.basis === "utilisation" ? " (active)" : ""} — today&apos;s trip raises the whole forward curve.
           </div>
@@ -285,9 +285,9 @@ export default function LabPanel() {
 
       {/* Macro context */}
       {macro && (
-        <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
-          <div className="mb-1 text-[10px] tracking-widest text-[var(--ink-soft)]">MACRO CONTEXT</div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
+        <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+          <div className="mb-1 text-[11px] tracking-widest text-[var(--ink-soft)]">MACRO CONTEXT</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
             <div className="flex justify-between">
               <span className="text-[var(--ink-soft)]">AUD/USD {macro.fx.live ? "· live" : "· ref"}</span>
               <span>{macro.fx.audUsd.toFixed(4)}</span>
@@ -317,7 +317,7 @@ export default function LabPanel() {
               </div>
             )}
           </div>
-          <div className="mt-1.5 text-[9px] leading-snug text-[var(--ink-soft)]">
+          <div className="mt-1.5 text-[10px] leading-snug text-[var(--ink-soft)]">
             fuel costs and FX set the price level over weeks (they shift coal/gas marginal cost in
             AUD); weather and outages drive the 72h curve. Reference values are maintained, not
             live — labelled accordingly.
@@ -326,9 +326,9 @@ export default function LabPanel() {
       )}
 
       {/* Time travel */}
-      <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
+      <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
         <div className="mb-1.5 flex items-center justify-between">
-          <span className="text-[10px] tracking-widest text-[var(--ink-soft)]">
+          <span className="text-[11px] tracking-widest text-[var(--ink-soft)]">
             TIME TRAVEL — PRICE FORECAST {rf.mc ? `· MC ×${rf.mc.runs} P10–P90` : "±1σ"}
           </span>
           <div className="flex overflow-hidden rounded border" style={{ borderColor: "var(--edge)" }}>
@@ -336,7 +336,7 @@ export default function LabPanel() {
               <button
                 key={h}
                 onClick={() => setHorizon(h)}
-                className="px-1.5 py-0.5 text-[9px] tracking-widest"
+                className="px-1.5 py-0.5 text-[10px] tracking-widest"
                 style={
                   horizon === h
                     ? { background: "var(--gen)", color: "#0b0d11" }
@@ -352,7 +352,7 @@ export default function LabPanel() {
         <div className="mt-2 flex items-center gap-2">
           <button
             onClick={() => setPlaying((p) => !p)}
-            className="rounded px-2 py-0.5 text-[10px] tracking-widest"
+            className="rounded px-2 py-0.5 text-[11px] tracking-widest"
             style={{ background: "var(--gen)", color: "#0b0d11" }}
           >
             {playing ? "❚❚" : "▶"}
@@ -366,7 +366,7 @@ export default function LabPanel() {
             className="flex-1"
           />
         </div>
-        <div className="mt-1.5 text-[10px] text-[var(--ink-soft)]">
+        <div className="mt-1.5 text-[11px] text-[var(--ink-soft)]">
           <span className="text-[var(--ink)]">
             {new Date(cur.ts).toLocaleString("en-AU", { weekday: "short", hour: "2-digit", minute: "2-digit" })}
           </span>{" "}
@@ -374,7 +374,7 @@ export default function LabPanel() {
           {rf.mc && (
             <>
               {" "}
-              <span className="text-[9px]">
+              <span className="text-[10px]">
                 (P10 ${fmt(rf.mc.p10[cursorIdx])} – P90 ${fmt(rf.mc.p90[cursorIdx])})
               </span>
             </>
@@ -383,7 +383,7 @@ export default function LabPanel() {
           {fmt(cur.temp, 1)}°C / {fmt(cur.windMs, 1)} m/s
         </div>
         {deskOnForecast && (
-          <div className="mt-1.5 border-t pt-1.5 text-[10px]" style={{ borderColor: "var(--edge)" }}>
+          <div className="mt-1.5 border-t pt-1.5 text-[11px]" style={{ borderColor: "var(--edge)" }}>
             <span className="text-[var(--ink-soft)]">your DESK book over this window: </span>
             <span style={{ color: deskOnForecast.marginAUD >= 0 ? "var(--gen)" : "#e2483d" }}>
               {deskOnForecast.marginAUD >= 0 ? "+" : "−"}$
@@ -398,19 +398,19 @@ export default function LabPanel() {
         <div className="mt-1.5 flex items-center justify-between">
           <button
             onClick={takeSnapshot}
-            className="rounded border px-2 py-0.5 text-[9px] tracking-widest text-[var(--ink-soft)]"
+            className="rounded border px-2 py-0.5 text-[10px] tracking-widest text-[var(--ink-soft)]"
             style={{ borderColor: "var(--edge)" }}
           >
             ◉ SNAPSHOT THIS FORECAST
           </button>
-          <span className="text-[9px] text-[var(--ink-soft)]">graded as reality catches up</span>
+          <span className="text-[10px] text-[var(--ink-soft)]">graded as reality catches up</span>
         </div>
       </div>
 
       {/* Variance scorecard */}
       {snaps.length > 0 && (
-        <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
-          <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">
+        <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+          <div className="mb-1.5 text-[11px] tracking-widest text-[var(--ink-soft)]">
             SCORECARD — SYNTHESISED VS WHAT ACTUALLY HAPPENED ({region.replace(/\d$/, "")})
           </div>
           <div className="space-y-2.5">
@@ -418,7 +418,7 @@ export default function LabPanel() {
               const score = scoreSnapshot(snap, series, region, nowMs);
               const age = (nowMs - snap.createdAt) / 3600_000;
               return (
-                <div key={snap.id} className="text-[10px]">
+                <div key={snap.id} className="text-[11px]">
                   <div className="flex justify-between text-[var(--ink-soft)]">
                     <span>
                       {new Date(snap.createdAt).toLocaleString("en-AU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}{" "}
@@ -441,7 +441,7 @@ export default function LabPanel() {
                   {score && score.coverage > 0.04 && score.rows[0].n > 2 ? (
                     <table className="mt-1 w-full">
                       <thead>
-                        <tr className="text-left text-[9px] tracking-wider text-[var(--ink-soft)]">
+                        <tr className="text-left text-[10px] tracking-wider text-[var(--ink-soft)]">
                           <th>VAR</th>
                           <th className="text-right">MAE</th>
                           <th className="text-right">RMSE</th>
@@ -464,7 +464,7 @@ export default function LabPanel() {
                       {score.fan && (
                         <tfoot>
                           <tr>
-                            <td colSpan={4} className="pt-0.5 text-[9px] text-[var(--ink-soft)]">
+                            <td colSpan={4} className="pt-0.5 text-[10px] text-[var(--ink-soft)]">
                               fan calibration: price inside P10–P90{" "}
                               <span
                                 style={{
@@ -483,7 +483,7 @@ export default function LabPanel() {
                       )}
                     </table>
                   ) : (
-                    <div className="mt-0.5 text-[9px] text-[var(--ink-soft)]">
+                    <div className="mt-0.5 text-[10px] text-[var(--ink-soft)]">
                       too young to grade — check back in {fmt(Math.max(1 - age, 0.02) * 60 + 30)} min
                     </div>
                   )}
@@ -491,7 +491,7 @@ export default function LabPanel() {
               );
             })}
           </div>
-          <div className="mt-2 border-t pt-1.5 text-[9px] leading-snug text-[var(--ink-soft)]" style={{ borderColor: "var(--edge)" }}>
+          <div className="mt-2 border-t pt-1.5 text-[10px] leading-snug text-[var(--ink-soft)]" style={{ borderColor: "var(--edge)" }}>
             MAE/RMSE in native units ($/MWh, MW) over the elapsed part of each forecast. Bias &gt; 0
             = the simulation ran hot.
           </div>
