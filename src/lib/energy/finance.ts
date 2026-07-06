@@ -1,5 +1,6 @@
 import type { PricePoint } from "./history";
 import type { ScenarioTech } from "./scenario";
+import { mulberry32 } from "./stats";
 
 // Project-finance layer for the BUILD view's custom asset.
 //
@@ -315,6 +316,11 @@ export interface MonteCarloResult {
   probPositive: number;
   /** Histogram of NPV outcomes ($) for a sparkline. */
   npvSamples: number[];
+  /** Per operating year: realised nominal capture price quantiles, $/MWh —
+   *  the same sampled paths that drive the NPV distribution. */
+  priceP10: number[];
+  priceP50: number[];
+  priceP90: number[];
 }
 
 /** Daily mean prices from a history price series (groups by UTC day). */
@@ -334,18 +340,6 @@ function quantile(sorted: number[], q: number): number {
   if (sorted.length === 0) return 0;
   const idx = Math.min(Math.floor(q * sorted.length), sorted.length - 1);
   return sorted[idx];
-}
-
-/** Mulberry32 — small deterministic PRNG so runs are reproducible. */
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 /**
@@ -371,6 +365,9 @@ export function runMonteCarlo(
   const rng = mulberry32(seed);
   const npvSamples: number[] = [];
   const irrSamples: number[] = [];
+  // Realised nominal capture price per operating year, across runs — the
+  // price paths behind the NPV distribution, kept for the fan chart.
+  const priceByYear: number[][] = Array.from({ length: input.operatingLifeYears }, () => []);
 
   for (let r = 0; r < runs; r++) {
     // One sampled annual price multiplier per operating year.
@@ -386,6 +383,7 @@ export function runMonteCarlo(
       const mult = annualLevel / baseLevel;
       const energy = aepYear1 * Math.pow(1 - input.degradation, k - 1);
       const priceEsc = Math.pow(1 + input.inflation + input.priceGrowth, k - 1);
+      priceByYear[k - 1].push(input.captureAUD * mult * priceEsc);
       const revenue = input.captureAUD * mult * energy * priceEsc;
       const om = input.omPerMWh * energy * Math.pow(1 + input.omEscalation, k - 1);
       const capex = k === 1 ? totalCapex : 0;
@@ -401,6 +399,8 @@ export function runMonteCarlo(
   const sortedNpv = [...npvSamples].sort((a, b) => a - b);
   const sortedIrr = [...irrSamples].sort((a, b) => a - b);
   const positive = npvSamples.filter((v) => v > 0).length;
+  const priceQ = (q: number) =>
+    priceByYear.map((samples) => quantile([...samples].sort((a, b) => a - b), q));
 
   return {
     runs,
@@ -412,5 +412,8 @@ export function runMonteCarlo(
     irrP90: sortedIrr.length ? quantile(sortedIrr, 0.9) : null,
     probPositive: npvSamples.length ? positive / npvSamples.length : 0,
     npvSamples,
+    priceP10: priceQ(0.1),
+    priceP50: priceQ(0.5),
+    priceP90: priceQ(0.9),
   };
 }

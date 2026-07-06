@@ -1,6 +1,6 @@
 import type { RegionSeriesData, SeriesPayload } from "./series";
 import type { RegionWeather, WeatherPayload } from "./weather";
-import { errorStats, ols, ols2, pearson, quantile, stdDev, winsorize } from "./stats";
+import { errorStats, mulberry32, ols, ols2, pearson, quantile, stdDev, winsorize } from "./stats";
 
 // The LAB's forward simulation ("time travel"):
 //  1. FIT — from the last 7 days of aligned 30-min grid data and hourly
@@ -8,7 +8,8 @@ import { errorStats, ols, ols2, pearson, quantile, stdDev, winsorize } from "./s
 //     demand ~ hour-of-day shape + heating/cooling degrees, and
 //     price ~ residual demand (demand − wind − solar).
 //  2. PROJECT — run those fits over the 7-day weather *forecast* to
-//     synthesise future demand, VRE output and price (with a ±1σ band).
+//     synthesise future demand, VRE output and price (±1σ band, plus a
+//     Monte-Carlo fan from block-bootstrapped model errors).
 //  3. SCORE — when reality catches up, compare stored forecasts against
 //     actuals: MAE / RMSE / bias per variable.
 // Transparent statistics, no AI: every number traces to a fit you can read.
@@ -29,6 +30,9 @@ export interface RegionForecast {
   priceHat: number[];
   priceLo: number[];
   priceHi: number[];
+  /** Monte-Carlo price fan: per-step quantiles across bootstrapped paths
+   *  (null when the history is too thin to resample errors from). */
+  mc: { runs: number; p10: number[]; p25: number[]; p75: number[]; p90: number[] } | null;
   demandHat: number[];
   windHat: number[];
   solarHat: number[];
@@ -232,7 +236,48 @@ export function fitAndProject(
     priceHi.push(Math.round((pc + sig) * 10) / 10);
   }
 
-  return { t: ft, priceHat, priceLo, priceHi, demandHat, windHat, solarHat, tempC: tempF, windMs: windF, radWm2: radF, fit };
+  // --- MONTE CARLO ---------------------------------------------------------
+  // Simulate price paths by block-bootstrapping the model's own in-sample
+  // errors (actual − fitted over the 7-day history) around the deterministic
+  // projection. 4h blocks preserve spike clustering; per-step quantiles across
+  // the paths give the fan. Errors come from the raw (not winsorized) prices
+  // so the upper tail carries genuine spike risk.
+  const residErr: number[] = [];
+  t.forEach((ts, i) => {
+    const actual = priceAUD[i];
+    if (!Number.isFinite(actual)) return;
+    let hat: number;
+    if (useProfile) {
+      hat = hodPriceMed[hodOf(ts)];
+    } else {
+      const x = useUtil ? utilisation[i] : residual[i];
+      if (!Number.isFinite(x)) return;
+      hat = priceFit.intercept + priceFit.slope * x;
+    }
+    if (Number.isFinite(hat)) residErr.push(actual - hat);
+  });
+
+  let mc: RegionForecast["mc"] = null;
+  if (residErr.length >= 48) {
+    const RUNS = 240;
+    const BLOCK = 8; // 4h of 30-min steps
+    const rng = mulberry32(0x51ab5eed);
+    const perStep: number[][] = Array.from({ length: steps }, () => []);
+    for (let r = 0; r < RUNS; r++) {
+      for (let i = 0; i < steps; i += BLOCK) {
+        const start = Math.floor(rng() * residErr.length);
+        for (let j = 0; j < BLOCK && i + j < steps; j++) {
+          const v = priceHat[i + j] + residErr[(start + j) % residErr.length];
+          // NEM floor/cap — paths may spike; quantiles stay robust.
+          perStep[i + j].push(Math.min(Math.max(v, -1000), 16600));
+        }
+      }
+    }
+    const q = (p: number) => perStep.map((s) => Math.round(quantile(s, p) * 10) / 10);
+    mc = { runs: RUNS, p10: q(0.1), p25: q(0.25), p75: q(0.75), p90: q(0.9) };
+  }
+
+  return { t: ft, priceHat, priceLo, priceHi, mc, demandHat, windHat, solarHat, tempC: tempF, windMs: windF, radWm2: radF, fit };
 }
 
 export function buildForecast(
