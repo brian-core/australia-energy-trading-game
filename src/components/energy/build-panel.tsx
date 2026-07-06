@@ -525,13 +525,15 @@ export default function BuildPanel({
         <div className="text-[11px] text-[var(--ink-soft)]">loading price history…</div>
       ) : (
         <>
-          {/* Project finance — custom assets only. Sits directly under the
-              New Asset picker so the LCOE/LCOS + NPV/IRR show up as soon as an
-              asset is configured, before the price/mix detail below. */}
-          {!project && (
+          {/* Project finance — custom assets and pipeline builds (closures have
+              nothing to finance). Sits directly under the New Asset picker so
+              the LCOE/LCOS + NPV/IRR show up as soon as an asset is selected,
+              before the price/mix detail below. Pipeline projects seed from
+              tech defaults; every assumption stays editable. */}
+          {project?.tech !== "closure" && (
             <ProjectFinance
               tech={asset.tech}
-              capacityMW={asset.mw}
+              capacityMW={Math.abs(asset.mw)}
               captureAUD={result.captureAUD ?? result.avgAfterAUD}
               prices={history?.regions[asset.region] ?? []}
               demo={!!history?.demo}
