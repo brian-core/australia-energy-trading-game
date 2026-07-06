@@ -116,7 +116,15 @@ export default function LabPanel() {
       regions: Object.fromEntries(
         Object.entries(forecast.regions).map(([code, f]) => [
           code,
-          { t: f.t, priceHat: f.priceHat, demandHat: f.demandHat, windHat: f.windHat, solarHat: f.solarHat },
+          {
+            t: f.t,
+            priceHat: f.priceHat,
+            demandHat: f.demandHat,
+            windHat: f.windHat,
+            solarHat: f.solarHat,
+            // Keep the MC fan so the snapshot can be calibration-scored.
+            ...(f.mc ? { priceP10: f.mc.p10, priceP90: f.mc.p90 } : {}),
+          },
         ]),
       ),
     };
@@ -453,6 +461,26 @@ export default function LabPanel() {
                           </tr>
                         ))}
                       </tbody>
+                      {score.fan && (
+                        <tfoot>
+                          <tr>
+                            <td colSpan={4} className="pt-0.5 text-[9px] text-[var(--ink-soft)]">
+                              fan calibration: price inside P10–P90{" "}
+                              <span
+                                style={{
+                                  color:
+                                    score.fan.hitRate >= 0.6 && score.fan.hitRate <= 0.95
+                                      ? "var(--gen)"
+                                      : "#f2c14e",
+                                }}
+                              >
+                                {Math.round(score.fan.hitRate * 100)}%
+                              </span>{" "}
+                              of {score.fan.n} steps · target ~80%
+                            </td>
+                          </tr>
+                        </tfoot>
+                      )}
                     </table>
                   ) : (
                     <div className="mt-0.5 text-[9px] text-[var(--ink-soft)]">

@@ -300,10 +300,20 @@ export interface LabSnapshot {
   id: string;
   createdAt: number;
   horizonH: number;
-  /** Per region: timestamps + the four forecast tracks we grade. */
+  /** Per region: timestamps + the four forecast tracks we grade, plus the
+   *  MC price fan when it existed at snapshot time (older snapshots and
+   *  thin-history regions won't have it). */
   regions: Record<
     string,
-    { t: number[]; priceHat: number[]; demandHat: number[]; windHat: number[]; solarHat: number[] }
+    {
+      t: number[];
+      priceHat: number[];
+      demandHat: number[];
+      windHat: number[];
+      solarHat: number[];
+      priceP10?: number[];
+      priceP90?: number[];
+    }
   >;
 }
 
@@ -334,13 +344,20 @@ export interface VarianceRow {
   n: number;
 }
 
+/** Fan calibration: how often the actual landed inside the snapshot's
+ *  P10-P90 band. A well-calibrated fan hits ~80%. */
+export interface FanCalibration {
+  hitRate: number;
+  n: number;
+}
+
 /** Grade a snapshot against actual series over the elapsed overlap. */
 export function scoreSnapshot(
   snap: LabSnapshot,
   actual: SeriesPayload,
   region: string,
   now: number,
-): { rows: VarianceRow[]; coverage: number } | null {
+): { rows: VarianceRow[]; coverage: number; fan: FanCalibration | null } | null {
   const f = snap.regions[region];
   const a = actual.regions[region];
   if (!f || !a) return null;
@@ -367,6 +384,24 @@ export function scoreSnapshot(
     make("wind", f.windHat, a.windMW),
     make("solar", f.solarHat, a.solarMW),
   ];
+
+  let fan: FanCalibration | null = null;
+  if (f.priceP10 && f.priceP90) {
+    let hits = 0;
+    let n = 0;
+    f.t.forEach((ts, i) => {
+      if (ts > now) return;
+      const j = Math.round((ts - a.startMs) / 1800_000);
+      const actualP = j >= 0 && j < a.priceAUD.length ? a.priceAUD[j] : NaN;
+      const lo = f.priceP10![i];
+      const hi = f.priceP90![i];
+      if (!Number.isFinite(actualP) || !Number.isFinite(lo) || !Number.isFinite(hi)) return;
+      n++;
+      if (actualP >= lo && actualP <= hi) hits++;
+    });
+    if (n > 0) fan = { hitRate: hits / n, n };
+  }
+
   const elapsed = f.t.filter((ts) => ts <= now).length;
-  return { rows, coverage: f.t.length ? elapsed / f.t.length : 0 };
+  return { rows, coverage: f.t.length ? elapsed / f.t.length : 0, fan };
 }
