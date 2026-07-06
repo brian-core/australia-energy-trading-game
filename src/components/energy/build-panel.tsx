@@ -255,6 +255,10 @@ function ProjectFinance({
             IRR P10–P90 {irrPct(mc.irrP10)} – {irrPct(mc.irrP90)}
             {demo && " · SYNTHETIC HISTORY"}
           </div>
+          <div className="mt-0.5 text-[9px] text-[var(--ink-soft)]">
+            risk: price (bootstrap) · capex σ{(fin.capexSigma * 100).toFixed(0)}% overrun-skewed ·
+            CF σ{(fin.cfSigma * 100).toFixed(0)}%
+          </div>
 
           {/* Lifetime capture-price fan — the sampled price paths behind the
               NPV distribution, so the chart and the finance numbers agree. */}
@@ -300,6 +304,8 @@ function ProjectFinance({
           <FinField label="PRICE GROWTH" value={Math.round(fin.priceGrowth * 1000) / 10} step={0.5} suffix="%/yr real" onChange={(v) => set("priceGrowth")(v / 100)} />
           <FinField label="INFLATION" value={Math.round(fin.inflation * 1000) / 10} step={0.5} suffix="%/yr" onChange={(v) => set("inflation")(v / 100)} />
           <FinField label="CAPTURE PRICE" value={Math.round(fin.captureAUD)} step={5} suffix="$/MWh" onChange={set("captureAUD")} />
+          <FinField label="CAPEX RISK σ" value={Math.round(fin.capexSigma * 1000) / 10} step={1} suffix="% MC" onChange={(v) => set("capexSigma")(v / 100)} />
+          <FinField label="CF RISK σ" value={Math.round(fin.cfSigma * 1000) / 10} step={1} suffix="% MC" onChange={(v) => set("cfSigma")(v / 100)} />
           <button
             onClick={() => setOverrides({})}
             className="col-span-2 mt-0.5 rounded border px-2 py-0.5 text-[9px] tracking-widest text-[var(--ink-soft)] hover:text-[var(--ink)]"

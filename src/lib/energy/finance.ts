@@ -46,6 +46,13 @@ export interface FinanceInputs {
   inflation: number;
   /** Generation-weighted price the asset earns, $/MWh (from the sim). */
   captureAUD: number;
+  /** MC-only: capex outturn risk σ as a fraction of capex. Sampled once per
+   *  run, right-skewed (overruns run bigger than underruns). Ignored by the
+   *  deterministic case. */
+  capexSigma: number;
+  /** MC-only: systematic capacity-factor estimate risk σ (resource/
+   *  performance error, one draw per run applied to every year). */
+  cfSigma: number;
 }
 
 export interface YearCashflow {
@@ -94,13 +101,17 @@ export const TECH_DEFAULTS: Record<
     | "omPerMWh"
     | "degradation"
     | "devPhaseYears"
+    | "capexSigma"
+    | "cfSigma"
   >
 > = {
-  solar: { capacityFactor: 0.27, capexPerMW: 1_100_000, operatingLifeYears: 30, omPerMWh: 8, degradation: 0.005, devPhaseYears: 2 },
-  wind: { capacityFactor: 0.38, capexPerMW: 2_000_000, operatingLifeYears: 30, omPerMWh: 15, degradation: 0.003, devPhaseYears: 2 },
-  battery: { capacityFactor: 0.18, capexPerMW: 2_400_000, operatingLifeYears: 15, omPerMWh: 10, degradation: 0.02, devPhaseYears: 1 },
-  phes: { capacityFactor: 0.22, capexPerMW: 3_500_000, operatingLifeYears: 50, omPerMWh: 6, degradation: 0.001, devPhaseYears: 4 },
-  gas: { capacityFactor: 0.12, capexPerMW: 1_300_000, operatingLifeYears: 25, omPerMWh: 12, degradation: 0.002, devPhaseYears: 2 },
+  // capexSigma/cfSigma: delivery risk differs by tech — modular solar/battery
+  // builds outturn tighter than civil-works-heavy pumped hydro.
+  solar: { capacityFactor: 0.27, capexPerMW: 1_100_000, operatingLifeYears: 30, omPerMWh: 8, degradation: 0.005, devPhaseYears: 2, capexSigma: 0.06, cfSigma: 0.05 },
+  wind: { capacityFactor: 0.38, capexPerMW: 2_000_000, operatingLifeYears: 30, omPerMWh: 15, degradation: 0.003, devPhaseYears: 2, capexSigma: 0.09, cfSigma: 0.07 },
+  battery: { capacityFactor: 0.18, capexPerMW: 2_400_000, operatingLifeYears: 15, omPerMWh: 10, degradation: 0.02, devPhaseYears: 1, capexSigma: 0.07, cfSigma: 0.04 },
+  phes: { capacityFactor: 0.22, capexPerMW: 3_500_000, operatingLifeYears: 50, omPerMWh: 6, degradation: 0.001, devPhaseYears: 4, capexSigma: 0.2, cfSigma: 0.05 },
+  gas: { capacityFactor: 0.12, capexPerMW: 1_300_000, operatingLifeYears: 25, omPerMWh: 12, degradation: 0.002, devPhaseYears: 2, capexSigma: 0.1, cfSigma: 0.05 },
 };
 
 /** Build a full set of finance inputs from a tech + capacity + capture price,
@@ -129,6 +140,8 @@ export function defaultFinanceInputs(
     priceGrowth: 0,
     inflation: macro?.inflation ?? 0.03,
     captureAUD,
+    capexSigma: d.capexSigma,
+    cfSigma: d.cfSigma,
   };
 }
 
@@ -343,10 +356,13 @@ function quantile(sorted: number[], q: number): number {
 }
 
 /**
- * Monte-Carlo NPV/IRR by bootstrapping each operating year's average price
- * level from the historical daily-price distribution, then scaling the base
- * capture price by that level. Captures inter-annual price risk (weather years,
- * fuel cycles) which the deterministic case ignores.
+ * Monte-Carlo NPV/IRR over three risk drivers the deterministic case ignores:
+ *  - price: each operating year's average level bootstrapped from the
+ *    historical daily-price distribution (weather years, fuel cycles);
+ *  - capex: one right-skewed outturn multiplier per run (overruns run
+ *    bigger than underruns), σ = input.capexSigma;
+ *  - capacity factor: one systematic resource/performance multiplier per run
+ *    applied to every year, σ = input.cfSigma.
  */
 export function runMonteCarlo(
   input: FinanceInputs,
@@ -363,6 +379,9 @@ export function runMonteCarlo(
   // variance). Cap K so a long history doesn't collapse to its mean.
   const K = Math.min(days.length, 24);
   const rng = mulberry32(seed);
+  // Standard normal via Box-Muller on the seeded PRNG.
+  const randn = () =>
+    Math.sqrt(-2 * Math.log(Math.max(rng(), 1e-12))) * Math.cos(2 * Math.PI * rng());
   const npvSamples: number[] = [];
   const irrSamples: number[] = [];
   // Realised nominal capture price per operating year, across runs — the
@@ -370,12 +389,18 @@ export function runMonteCarlo(
   const priceByYear: number[][] = Array.from({ length: input.operatingLifeYears }, () => []);
 
   for (let r = 0; r < runs; r++) {
+    // Per-run systematic draws: capex outturn (right-skewed — a $1 overrun is
+    // likelier/larger than a $1 underrun) and capacity-factor estimate error.
+    const zc = randn();
+    const capexMult = Math.min(Math.max(1 + input.capexSigma * (zc > 0 ? 1.5 * zc : zc), 0.7), 2.2);
+    const cfMult = Math.min(Math.max(1 + input.cfSigma * randn(), 0.7), 1.2);
+
     // One sampled annual price multiplier per operating year.
     const flows: number[] = [];
     for (let t = 0; t < input.devPhaseYears; t++) flows.push(-input.devCostPerYear);
 
-    const aepYear1 = input.capacityMW * input.capacityFactor * 8760;
-    const totalCapex = input.capexPerMW * input.capacityMW;
+    const aepYear1 = input.capacityMW * input.capacityFactor * 8760 * cfMult;
+    const totalCapex = input.capexPerMW * input.capacityMW * capexMult;
     for (let k = 1; k <= input.operatingLifeYears; k++) {
       let s = 0;
       for (let j = 0; j < K; j++) s += days[Math.floor(rng() * days.length)];
