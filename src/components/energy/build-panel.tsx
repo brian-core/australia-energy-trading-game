@@ -112,17 +112,17 @@ function FinField({
 }) {
   return (
     <label className="flex flex-col gap-0.5">
-      <span className="text-[9px] tracking-wider text-[var(--ink-soft)]">{label}</span>
+      <span className="text-[10px] tracking-wider text-[var(--ink-soft)]">{label}</span>
       <span className="flex items-center gap-1">
         <input
           type="number"
           value={value}
           step={step}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="w-full rounded border bg-black/30 px-1 py-0.5 text-right text-[10px]"
+          className="w-full rounded border bg-black/30 px-1 py-0.5 text-right text-[11px]"
           style={{ borderColor: "var(--edge)" }}
         />
-        {suffix && <span className="text-[9px] text-[var(--ink-soft)]">{suffix}</span>}
+        {suffix && <span className="text-[10px] text-[var(--ink-soft)]">{suffix}</span>}
       </span>
     </label>
   );
@@ -152,7 +152,9 @@ function ProjectFinance({
   demo: boolean;
   macro: MacroPayload | null;
 }) {
-  const [open, setOpen] = useState(false);
+  // Assumptions open by default: the report layout has room, and editing them
+  // live-updates LCOE/NPV/IRR and the Monte-Carlo fan alongside.
+  const [open, setOpen] = useState(true);
   const [overrides, setOverrides] = useState<Partial<FinanceInputs>>({});
   // Reset overrides when the technology changes (defaults differ per tech).
   // Render-time reset per the React "you might not need an effect" pattern.
@@ -187,10 +189,10 @@ function ProjectFinance({
   const irrPct = (x: number | null) => (x == null ? "—" : `${(x * 100).toFixed(1)}%`);
 
   return (
-    <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
+    <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between text-[10px] tracking-widest text-[var(--ink-soft)]"
+        className="flex w-full items-center justify-between text-[11px] tracking-widest text-[var(--ink-soft)]"
       >
         <span>PROJECT FINANCE — {result.levelisedKind}</span>
         <span>{open ? "−" : "+"}</span>
@@ -199,22 +201,22 @@ function ProjectFinance({
       {/* Headline outputs (always visible) */}
       <div className="mt-2 grid grid-cols-3 gap-2">
         <div>
-          <div className="text-sm">${result.lcoeAUD.toFixed(0)}</div>
-          <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">{result.levelisedKind} $/MWH</div>
+          <div className="text-base">${result.lcoeAUD.toFixed(0)}</div>
+          <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">{result.levelisedKind} $/MWH</div>
         </div>
         <div>
-          <div className="text-sm" style={{ color: result.npvAUD >= 0 ? "var(--gen)" : "#e2483d" }}>
+          <div className="text-base" style={{ color: result.npvAUD >= 0 ? "var(--gen)" : "#e2483d" }}>
             {money(result.npvAUD)}
           </div>
-          <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">NPV @ {(fin.discountRate * 100).toFixed(1)}%</div>
+          <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">NPV @ {(fin.discountRate * 100).toFixed(1)}%</div>
         </div>
         <div>
-          <div className="text-sm">{irrPct(result.irr)}</div>
-          <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">IRR</div>
+          <div className="text-base">{irrPct(result.irr)}</div>
+          <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">IRR</div>
         </div>
       </div>
 
-      <div className="mt-1.5 space-y-0.5 text-[10px] text-[var(--ink-soft)]">
+      <div className="mt-1.5 space-y-0.5 text-[11px] text-[var(--ink-soft)]">
         <div className="flex justify-between">
           <span>capex / AEP yr1</span>
           <span>
@@ -234,7 +236,7 @@ function ProjectFinance({
           </div>
         )}
         {macro && (
-          <div className="text-[9px] text-[var(--ink-soft)]">
+          <div className="text-[10px] text-[var(--ink-soft)]">
             WACC default {macroLive ? "from RBA cash rate" : "≈"} {macro.cashRate.pct.toFixed(2)}% +{" "}
             {(EQUITY_PREMIUM * 100).toFixed(0)}% premium · inflation {macro.cpi.yoyPct.toFixed(1)}%
             {macroLive ? "" : " (reference)"}
@@ -245,17 +247,17 @@ function ProjectFinance({
       {/* Monte-Carlo distribution */}
       {mc && (
         <div className="mt-2">
-          <div className="mb-0.5 flex justify-between text-[9px] text-[var(--ink-soft)]">
+          <div className="mb-0.5 flex justify-between text-[10px] text-[var(--ink-soft)]">
             <span>NPV P10 {money(mc.npvP10)}</span>
             <span>P50 {money(mc.npvP50)}</span>
             <span>P90 {money(mc.npvP90)}</span>
           </div>
           <NpvSpark samples={mc.npvSamples} p50={mc.npvP50} />
-          <div className="mt-0.5 text-[9px] text-[var(--ink-soft)]">
+          <div className="mt-0.5 text-[10px] text-[var(--ink-soft)]">
             IRR P10–P90 {irrPct(mc.irrP10)} – {irrPct(mc.irrP90)}
             {demo && " · SYNTHETIC HISTORY"}
           </div>
-          <div className="mt-0.5 text-[9px] text-[var(--ink-soft)]">
+          <div className="mt-0.5 text-[10px] text-[var(--ink-soft)]">
             risk: price (bootstrap) · capex σ{(fin.capexSigma * 100).toFixed(0)}% overrun-skewed ·
             CF σ{(fin.cfSigma * 100).toFixed(0)}%
           </div>
@@ -264,7 +266,7 @@ function ProjectFinance({
               NPV distribution, so the chart and the finance numbers agree. */}
           {mc.priceP50.length > 1 && (
             <div className="mt-2">
-              <div className="mb-0.5 text-[9px] tracking-widest text-[var(--ink-soft)]">
+              <div className="mb-0.5 text-[10px] tracking-widest text-[var(--ink-soft)]">
                 CAPTURE PRICE PATH — MC P10–P90 · $/MWH NOMINAL
               </div>
               <PriceChart
@@ -278,7 +280,7 @@ function ProjectFinance({
                 ]}
                 height={48}
               />
-              <div className="mt-0.5 text-[9px] text-[var(--ink-soft)]">
+              <div className="mt-0.5 text-[10px] text-[var(--ink-soft)]">
                 {fin.commissioningYear} → {fin.commissioningYear + mc.priceP50.length - 1} · yr1 P50 $
                 {Math.round(mc.priceP50[0])} → final P50 ${Math.round(mc.priceP50[mc.priceP50.length - 1])}
               </div>
@@ -308,14 +310,14 @@ function ProjectFinance({
           <FinField label="CF RISK σ" value={Math.round(fin.cfSigma * 1000) / 10} step={1} suffix="% MC" onChange={(v) => set("cfSigma")(v / 100)} />
           <button
             onClick={() => setOverrides({})}
-            className="col-span-2 mt-0.5 rounded border px-2 py-0.5 text-[9px] tracking-widest text-[var(--ink-soft)] hover:text-[var(--ink)]"
+            className="col-span-2 mt-0.5 rounded border px-2 py-0.5 text-[10px] tracking-widest text-[var(--ink-soft)] hover:text-[var(--ink)]"
             style={{ borderColor: "var(--edge)" }}
           >
             RESET TO {tech.toUpperCase()} DEFAULTS
           </button>
         </div>
       )}
-      <div className="mt-1.5 text-[9px] leading-snug text-[var(--ink-soft)]">
+      <div className="mt-1.5 text-[10px] leading-snug text-[var(--ink-soft)]">
         First-order developer finance — capture price from the merit-order sim, price risk
         bootstrapped from the region&apos;s history. Not a bankable valuation.
       </div>
@@ -413,14 +415,14 @@ export default function BuildPanel({
   const annualFactor = result && result.hours > 0 ? 8760 / result.hours : 0;
 
   return (
-    <div className="space-y-3 font-[family-name:var(--f-mono)] text-[11px]">
-      <div className="text-[9px] leading-snug tracking-widest text-[var(--ink-soft)]">
+    <div className="space-y-3 font-[family-name:var(--f-mono)] text-xs">
+      <div className="text-[10px] leading-snug tracking-widest text-[var(--ink-soft)]">
         STYLISED MERIT-ORDER SIMULATION — NOT A DISPATCH MODEL. PIPELINE LIST IS INDICATIVE.
       </div>
 
       {/* Asset picker */}
-      <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
-        <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">NEW ASSET / CLOSURE</div>
+      <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+        <div className="mb-1.5 text-[11px] tracking-widest text-[var(--ink-soft)]">NEW ASSET / CLOSURE</div>
         <select
           value={projectId}
           onChange={(e) => setProjectId(e.target.value)}
@@ -475,9 +477,9 @@ export default function BuildPanel({
       </div>
 
       {project && (
-        <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
-          <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">PROJECT INFO</div>
-          <div className="space-y-1 text-[10px]">
+        <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+          <div className="mb-1.5 text-[11px] tracking-widest text-[var(--ink-soft)]">PROJECT INFO</div>
+          <div className="space-y-1 text-[11px]">
             <div className="leading-snug text-[var(--ink)]">{project.description}</div>
             <div className="flex justify-between text-[var(--ink-soft)]">
               <span>developer</span>
@@ -510,7 +512,7 @@ export default function BuildPanel({
               href={project.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2 inline-block rounded border px-2 py-0.5 text-[10px] tracking-wider text-[var(--ink-soft)] hover:text-[var(--ink)]"
+              className="mt-2 inline-block rounded border px-2 py-0.5 text-[11px] tracking-wider text-[var(--ink-soft)] hover:text-[var(--ink)]"
               style={{ borderColor: "var(--edge)" }}
             >
               PROJECT SITE ↗
@@ -520,7 +522,7 @@ export default function BuildPanel({
       )}
 
       {!result ? (
-        <div className="text-[10px] text-[var(--ink-soft)]">loading price history…</div>
+        <div className="text-[11px] text-[var(--ink-soft)]">loading price history…</div>
       ) : (
         <>
           {/* Project finance — custom assets only. Sits directly under the
@@ -538,25 +540,25 @@ export default function BuildPanel({
           )}
 
           {/* Price impact */}
-          <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
-            <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">
+          <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+            <div className="mb-1.5 text-[11px] tracking-widest text-[var(--ink-soft)]">
               PRICE IMPACT — {result.region.replace(/\d$/, "")} · LAST 7 DAYS
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <div className="text-sm">${result.avgBeforeAUD.toFixed(0)}</div>
-                <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">AVG BEFORE</div>
+                <div className="text-base">${result.avgBeforeAUD.toFixed(0)}</div>
+                <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">AVG BEFORE</div>
               </div>
               <div>
-                <div className="text-sm">${result.avgAfterAUD.toFixed(0)}</div>
-                <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">AVG AFTER</div>
+                <div className="text-base">${result.avgAfterAUD.toFixed(0)}</div>
+                <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">AVG AFTER</div>
               </div>
               <div>
-                <div className="text-sm" style={{ color: deltaAvg <= 0 ? "var(--gen)" : "#e2483d" }}>
+                <div className="text-base" style={{ color: deltaAvg <= 0 ? "var(--gen)" : "#e2483d" }}>
                   {deltaAvg <= 0 ? "" : "+"}
                   {deltaAvg.toFixed(0)}
                 </div>
-                <div className="text-[9px] tracking-widest text-[var(--ink-soft)]">Δ $/MWH</div>
+                <div className="text-[10px] tracking-widest text-[var(--ink-soft)]">Δ $/MWH</div>
               </div>
             </div>
             <div className="mt-2">
@@ -566,7 +568,7 @@ export default function BuildPanel({
                 color={deltaAvg <= 0 ? "#2c8c8a" : "#e2483d"}
               />
             </div>
-            <div className="mt-1 text-[9px] text-[var(--ink-soft)]">
+            <div className="mt-1 text-[10px] text-[var(--ink-soft)]">
               after (solid) vs before (faint) · p95 ${Math.round(result.p95BeforeAUD)} → $
               {Math.round(result.p95AfterAUD)}
               {history?.demo && " · SYNTHETIC HISTORY"}
@@ -574,19 +576,19 @@ export default function BuildPanel({
           </div>
 
           {/* Mix impact */}
-          <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
-            <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">GENERATION MIX (MODELLED)</div>
+          <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+            <div className="mb-1.5 text-[11px] tracking-widest text-[var(--ink-soft)]">GENERATION MIX (MODELLED)</div>
             <div className="space-y-1.5">
               <div>
-                <div className="mb-0.5 text-[9px] text-[var(--ink-soft)]">before</div>
+                <div className="mb-0.5 text-[10px] text-[var(--ink-soft)]">before</div>
                 <MixBar mix={result.mixBefore} />
               </div>
               <div>
-                <div className="mb-0.5 text-[9px] text-[var(--ink-soft)]">after</div>
+                <div className="mb-0.5 text-[10px] text-[var(--ink-soft)]">after</div>
                 <MixBar mix={result.mixAfter} />
               </div>
             </div>
-            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-[var(--ink-soft)]">
+            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-[var(--ink-soft)]">
               {result.mixAfter.slice(0, 6).map((m) => {
                 const beforeMwh = result.mixBefore.find((b) => b.fuel === m.fuel)?.mwh ?? 0;
                 const delta = m.mwh - beforeMwh;
@@ -604,9 +606,9 @@ export default function BuildPanel({
           </div>
 
           {/* Asset economics + book impact */}
-          <div className="rounded-lg border p-2.5" style={{ borderColor: "var(--edge)" }}>
-            <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">ASSET & BOOK</div>
-            <div className="space-y-0.5 text-[10px]">
+          <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+            <div className="mb-1.5 text-[11px] tracking-widest text-[var(--ink-soft)]">ASSET & BOOK</div>
+            <div className="space-y-0.5 text-[11px]">
               {result.realizedCF != null && (
                 <div className="flex justify-between text-[var(--ink-soft)]">
                   <span>realised capacity factor</span>
@@ -629,7 +631,7 @@ export default function BuildPanel({
                 </div>
               )}
               {project?.tech === "closure" && (
-                <div className="text-[9px] leading-snug text-[var(--ink-soft)]">
+                <div className="text-[10px] leading-snug text-[var(--ink-soft)]">
                   closure modelled with no replacement build — peak prices are the upper bound
                 </div>
               )}
