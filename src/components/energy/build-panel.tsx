@@ -137,6 +137,14 @@ function FinField({
 // (WACC) default. User-overridable in the inputs panel.
 const EQUITY_PREMIUM = 0.04;
 
+function download(filename: string, text: string) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/markdown" }));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function ProjectFinance({
   tech,
   capacityMW,
@@ -144,6 +152,9 @@ function ProjectFinance({
   prices,
   demo,
   macro,
+  label,
+  region,
+  scenario,
 }: {
   tech: ScenarioTech;
   capacityMW: number;
@@ -151,6 +162,9 @@ function ProjectFinance({
   prices: PricePoint[];
   demo: boolean;
   macro: MacroPayload | null;
+  label: string;
+  region: string;
+  scenario: { avgBeforeAUD: number; avgAfterAUD: number; p95BeforeAUD: number; p95AfterAUD: number } | null;
 }) {
   // Assumptions open by default: the report layout has room, and editing them
   // live-updates LCOE/NPV/IRR and the Monte-Carlo fan alongside.
@@ -188,15 +202,74 @@ function ProjectFinance({
 
   const irrPct = (x: number | null) => (x == null ? "—" : `${(x * 100).toFixed(1)}%`);
 
+  const exportReport = () => {
+    const d = new Date().toISOString().slice(0, 10);
+    const pct = (x: number, dp = 1) => `${(x * 100).toFixed(dp)}%`;
+    const md = [
+      `# Project Finance Report — ${label}`,
+      ``,
+      `Generated ${d} · region ${region.replace(/\d$/, "")} · Australia Live Grid /play BUILD`,
+      `Price history: last 7 days of ${demo ? "SYNTHETIC (feeds unreachable)" : "live NEM/WEM"} 30-min spot · WACC default ${macroLive ? `RBA cash rate ${macro?.cashRate.pct.toFixed(2)}% + ${pct(EQUITY_PREMIUM, 0)} premium` : "reference"} · inflation ${macro ? `${macro.cpi.yoyPct.toFixed(1)}% (${macro.cpi.live ? "live CPI" : "reference"})` : "reference"}`,
+      ``,
+      `Stylised merit-order simulation — screening-grade, not a dispatch model or bankable valuation.`,
+      ``,
+      `## Scenario impact (last 7 days, modelled)`,
+      ``,
+      scenario
+        ? `Avg spot before $${scenario.avgBeforeAUD.toFixed(0)}/MWh → after $${scenario.avgAfterAUD.toFixed(0)}/MWh (Δ ${(scenario.avgAfterAUD - scenario.avgBeforeAUD).toFixed(1)}) · p95 $${Math.round(scenario.p95BeforeAUD)} → $${Math.round(scenario.p95AfterAUD)}`
+        : `—`,
+      ``,
+      `## Inputs`,
+      ``,
+      `| Input | Value |`,
+      `|---|---|`,
+      `| technology / capacity | ${fin.tech} · ${fin.capacityMW} MW |`,
+      `| capacity factor | ${pct(fin.capacityFactor)} |`,
+      `| capex | $${Math.round(fin.capexPerMW / 1000)}k/MW ($${(fin.capexPerMW * fin.capacityMW / 1e6).toFixed(0)}m total) |`,
+      `| development | ${fin.devPhaseYears} yr · $${Math.round(fin.devCostPerYear / 1000)}k/yr · commissioning ${fin.commissioningYear} |`,
+      `| operating life / degradation | ${fin.operatingLifeYears} yr · ${pct(fin.degradation, 2)}/yr |`,
+      `| O&M | $${fin.omPerMWh}/MWh, escalating ${pct(fin.omEscalation)}/yr |`,
+      `| capture price | $${Math.round(fin.captureAUD)}/MWh (from the merit-order sim) |`,
+      `| WACC / inflation / real price growth | ${pct(fin.discountRate)} / ${pct(fin.inflation)} / ${pct(fin.priceGrowth)} |`,
+      `| decommissioning | $${Math.round(fin.decommissioningCost / 1e6)}m at end of life |`,
+      `| MC risk σ | capex ${pct(fin.capexSigma, 0)} (overrun-skewed) · CF ${pct(fin.cfSigma, 0)} · price bootstrapped |`,
+      ``,
+      `## Outputs`,
+      ``,
+      `| Metric | Value |`,
+      `|---|---|`,
+      `| ${result.levelisedKind} | $${result.lcoeAUD.toFixed(0)}/MWh |`,
+      `| NPV @ ${pct(fin.discountRate)} | ${money(result.npvAUD)} |`,
+      `| IRR | ${irrPct(result.irr)} |`,
+      `| payback (undiscounted) | ${result.paybackYears == null ? "never" : `${result.paybackYears} yr`} |`,
+      `| capex / AEP yr-1 | ${money(result.totalCapexAUD)} · ${Math.round(result.aepYear1MWh / 1000)} GWh |`,
+      mc ? `| MC NPV P10 / P50 / P90 (${mc.runs} runs) | ${money(mc.npvP10)} / ${money(mc.npvP50)} / ${money(mc.npvP90)} |` : ``,
+      mc ? `| MC IRR P10–P90 · P(NPV>0) | ${irrPct(mc.irrP10)} – ${irrPct(mc.irrP90)} · ${Math.round(mc.probPositive * 100)}% |` : ``,
+      mc && mc.priceP50.length > 1 ? `| capture-price path P50 (nominal) | $${Math.round(mc.priceP50[0])}/MWh yr-1 → $${Math.round(mc.priceP50[mc.priceP50.length - 1])}/MWh final |` : ``,
+      ``,
+      `Data: AEMO + OpenElectricity (5-min dispatch) · macro: RBA/ABS via Supabase pipeline · engine: deterministic-seed Monte Carlo.`,
+    ].filter((l) => l !== undefined);
+    download(`project-finance-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${d}.md`, md.join("\n"));
+  };
+
   return (
     <div className="rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between text-[11px] tracking-widest text-[var(--ink-soft)]"
-      >
-        <span>PROJECT FINANCE — {result.levelisedKind}</span>
-        <span>{open ? "−" : "+"}</span>
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex flex-1 items-center justify-between text-[11px] tracking-widest text-[var(--ink-soft)]"
+        >
+          <span>PROJECT FINANCE — {result.levelisedKind}</span>
+          <span>{open ? "−" : "+"}</span>
+        </button>
+        <button
+          onClick={exportReport}
+          className="rounded border px-1.5 py-0.5 text-[10px] tracking-widest text-[var(--ink-soft)] hover:text-[var(--ink)]"
+          style={{ borderColor: "var(--edge)" }}
+        >
+          ⭳ REPORT
+        </button>
+      </div>
 
       {/* Headline outputs (always visible) */}
       <div className="mt-2 grid grid-cols-3 gap-2">
@@ -538,6 +611,14 @@ export default function BuildPanel({
               prices={history?.regions[asset.region] ?? []}
               demo={!!history?.demo}
               macro={macro}
+              label={project ? project.name : `custom ${asset.tech} ${Math.abs(asset.mw)}MW`}
+              region={asset.region}
+              scenario={{
+                avgBeforeAUD: result.avgBeforeAUD,
+                avgAfterAUD: result.avgAfterAUD,
+                p95BeforeAUD: result.p95BeforeAUD,
+                p95AfterAUD: result.p95AfterAUD,
+              }}
             />
           )}
 
