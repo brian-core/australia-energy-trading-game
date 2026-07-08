@@ -28,6 +28,8 @@ export interface Platform {
   estimated: string[];
   source: string;
   note?: string;
+  /** Verbatim status from the NSTA infrastructure registry, where matched. */
+  nstaStatus?: string;
 }
 
 export interface WindFarm {
