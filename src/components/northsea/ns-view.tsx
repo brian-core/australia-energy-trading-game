@@ -245,6 +245,7 @@ export default function NsView() {
 
   const computeW = concept ? conceptWeightTonnes(concept, "compute") : 0;
   const h2W = concept ? conceptWeightTonnes(concept, "h2") : 0;
+  const intW = concept ? conceptWeightTonnes(concept, "interruptible") : 0;
 
   const spotAvg = market && market.spot.length ? market.spot.reduce((s, p) => s + p[1], 0) / market.spot.length : 0;
 
@@ -377,17 +378,18 @@ export default function NsView() {
                 {feas && (
                   <div className="space-y-0.5 text-[11px] leading-snug">
                     <div>
-                      compute+LDES NPV{" "}
-                      <span style={{ color: feas.compute.npvGBPm >= feas.decomNow.npvGBPm ? "#48a87c" : "#e2483d" }}>
-                        {gbpM(feas.compute.npvGBPm)}
+                      interruptible compute (v2) NPV{" "}
+                      <span style={{ color: feas.interruptible.npvGBPm >= feas.decomNow.npvGBPm ? "#48a87c" : "#e2483d" }}>
+                        {gbpM(feas.interruptible.npvGBPm)}
                       </span>{" "}
                       vs decom-now {gbpM(feas.decomNow.npvGBPm)} · P(beats decom){" "}
-                      {Math.round(feas.compute.probBeatsDecom * 100)}%
+                      {Math.round(feas.interruptible.probBeatsDecom * 100)}% · effective utilisation{" "}
+                      {Math.round(feas.interruptible.deliveredShare * 100)}%
                     </div>
                     <div className="text-[var(--ink-soft)]">
-                      break-even all-in lease £{Math.round(feas.compute.breakEvenLeaseKGBP)}k/MW-yr — the compute
-                      equivalent of H2 at £{concept.h2PriceGBPkg.toFixed(2)}/kg · wind-served hours{" "}
-                      {Math.round(feas.compute.servedShare * 100)}%
+                      break-even rate £{Math.round(feas.interruptible.breakEvenRateGBPMWh)}/MWh-IT — the compute
+                      equivalent of H2 at £{concept.h2PriceGBPkg.toFixed(2)}/kg · firm v1 comparator NPV{" "}
+                      {gbpM(feas.compute.npvGBPm)}
                     </div>
                   </div>
                 )}
@@ -448,7 +450,31 @@ export default function NsView() {
                   <NumField label="SECOND LIFE" value={concept.secondLifeYears} step={1} suffix="yr" onChange={set("secondLifeYears")} />
                   <NumField label="ELECTROLYSER" value={concept.h2ElectrolyserMW} step={10} suffix="MW" onChange={set("h2ElectrolyserMW")} />
                 </div>
+                <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--edge)" }}>
+                  <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">
+                    INTERRUPTIBLE VARIANT (V2) — CHECKPOINT & POWER DOWN IN LULLS · NO LDES DECK · NO HVDC · NO TAKE-OR-PAY
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    <NumField label="COMPUTE RATE" value={concept.intRevenueGBPPerMWhIT} step={10} suffix="£/MWh-IT" onChange={set("intRevenueGBPPerMWhIT")} />
+                    <NumField label="ENERGY STRIKE" value={concept.intStrikeGBP} step={5} suffix="£/MWh" onChange={set("intStrikeGBP")} />
+                    <NumField label="MIN LOAD" value={Math.round(concept.intMinLoadShare * 100)} step={5} suffix="%" onChange={(v) => set("intMinLoadShare")(v / 100)} />
+                    <NumField label="AC CABLE" value={concept.acCableGBPmPerKm} step={0.1} suffix="£m/km" onChange={set("acCableGBPmPerKm")} />
+                    <NumField label="BESS (3-4 CTNRS)" value={concept.bessCapexGBPm} step={1} suffix="£m" onChange={set("bessCapexGBPm")} />
+                    <NumField label="FIBRE VIA PIPE" value={concept.fibrePullGBPm} step={1} suffix="£m" onChange={set("fibrePullGBPm")} />
+                  </div>
+                  {!sel.platform.pipelineReuse && (
+                    <div className="mt-1 text-[10px] leading-snug" style={{ color: "#f2c14e" }}>
+                      no surviving export pipeline on this platform — fibre-via-pipe cost should be re-set to a
+                      subsea lay to {sel.distances.nearestLanding ? Math.round(sel.distances.nearestLanding.km) : "—"} km.
+                    </div>
+                  )}
+                </div>
                 <div className="mt-2 space-y-0.5">
+                  <Row
+                    k={`payload weight — interruptible v2 (${Math.round(intW).toLocaleString()} t)`}
+                    v={`${Math.round((intW / sel.platform.topsideTonnes) * 100)}% of budget`}
+                    warn={intW > sel.platform.topsideTonnes}
+                  />
                   <Row
                     k={`payload weight — compute+LDES (${Math.round(computeW).toLocaleString()} t)`}
                     v={`${Math.round((computeW / sel.platform.topsideTonnes) * 100)}% of budget`}
@@ -489,7 +515,17 @@ export default function NsView() {
                         <td className="text-right text-[var(--ink-soft)]">—</td>
                       </tr>
                       <tr>
-                        <td className="py-0.5">B · compute + LDES</td>
+                        <td className="py-0.5">B · interruptible compute (v2)</td>
+                        <td className="text-right">{gbpM(feas.interruptible.capexGBPm)}</td>
+                        <td className="text-right">{gbpM(feas.interruptible.npvP10GBPm)}</td>
+                        <td className="text-right" style={{ color: feas.interruptible.npvGBPm >= feas.decomNow.npvGBPm ? "#48a87c" : "#e2483d" }}>
+                          {gbpM(feas.interruptible.npvGBPm)}
+                        </td>
+                        <td className="text-right">{gbpM(feas.interruptible.npvP90GBPm)}</td>
+                        <td className="text-right">{Math.round(feas.interruptible.probBeatsDecom * 100)}%</td>
+                      </tr>
+                      <tr>
+                        <td className="py-0.5">C · firm compute + LDES (v1)</td>
                         <td className="text-right">{gbpM(feas.compute.capexGBPm)}</td>
                         <td className="text-right">{gbpM(feas.compute.npvP10GBPm)}</td>
                         <td className="text-right" style={{ color: feas.compute.npvGBPm >= feas.decomNow.npvGBPm ? "#48a87c" : "#e2483d" }}>
@@ -499,7 +535,7 @@ export default function NsView() {
                         <td className="text-right">{Math.round(feas.compute.probBeatsDecom * 100)}%</td>
                       </tr>
                       <tr>
-                        <td className="py-0.5">C · H2 electrolysis</td>
+                        <td className="py-0.5">D · H2 electrolysis</td>
                         <td className="text-right">{gbpM(feas.h2.capexGBPm)}</td>
                         <td className="text-right">{gbpM(feas.h2.npvP10GBPm)}</td>
                         <td className="text-right" style={{ color: feas.h2.npvGBPm >= feas.decomNow.npvGBPm ? "#48a87c" : "#e2483d" }}>
@@ -512,19 +548,24 @@ export default function NsView() {
                   </table>
                   <div className="mt-1.5 space-y-0.5 text-[10px] text-[var(--ink-soft)]">
                     <div>
-                      B revenue basis: all-in hosting £{concept.leaseKGBPPerMWyr}k/MW-yr · yr-1 revenue{" "}
-                      {gbpM(feas.compute.revenueGBPmYr)} vs power+opex {gbpM(feas.compute.costGBPmYr)}
+                      B: £{concept.intRevenueGBPPerMWhIT}/MWh-IT merchant · yr-1 revenue{" "}
+                      {gbpM(feas.interruptible.revenueGBPmYr)} vs power+opex {gbpM(feas.interruptible.costGBPmYr)} ·
+                      effective utilisation {Math.round(feas.interruptible.deliveredShare * 100)}% on these wind shapes
                     </div>
                     <div>
-                      C: {feas.h2.annualKt.toFixed(1)} kt H2/yr at £{concept.h2PriceGBPkg.toFixed(2)}/kg (Aberdeen/NDC
-                      break-even anchor) · both defer decom {concept.secondLifeYears} yr
+                      C: all-in lease £{concept.leaseKGBPPerMWyr}k/MW-yr with take-or-pay PPA + LDES + HVDC — the
+                      firmed comparator v2 engineered out
+                    </div>
+                    <div>
+                      D: {feas.h2.annualKt.toFixed(1)} kt H2/yr at £{concept.h2PriceGBPkg.toFixed(2)}/kg (Aberdeen/NDC
+                      anchor) · all repurposing options defer decom {concept.secondLifeYears} yr
                     </div>
                   </div>
                 </Section>
               )}
 
               {tornado && (
-                <Section n={5} title="SENSITIVITY — COMPUTE NPV, ±20% PER INPUT">
+                <Section n={5} title="SENSITIVITY — INTERRUPTIBLE (V2) NPV, ±20% PER INPUT">
                   <Tornado rows={tornado} />
                 </Section>
               )}
@@ -535,6 +576,9 @@ export default function NsView() {
                   <Row k="fibre connectivity" v="proximity screened — dark-fibre capacity unverified" />
                   <Row k="marine opex" v={`£${concept.opexKGBPPerMWyr}k/MW-yr — offshore-wind O&M analogue, reference`} />
                   <Row k="classification / new deck loading" v="not modelled — flagged for platform-integrity review" />
+                  <Row k="OSPAR 98/3 / derogation" v="full removal is the regulatory default — repurposing is a case-by-case carve-out" />
+                  <Row k="pipeline internal condition" v="fibre-via-pipe assumes a pull-ready flooded line — pigging records are the proxy" />
+                  <Row k="heavy-lift / vessel market" v="basin-wide capacity pressure — schedule risk, not priced here" />
                 </div>
               </Section>
 

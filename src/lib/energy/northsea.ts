@@ -123,18 +123,24 @@ function decay(km: number, half: number): number {
  * Sub-scores are each 0-1:
  *  - wind: proximity-decayed nearest-farm distance, boosted by resource pool
  *    within 60 km (an adjacent 1.5 GW zone beats a distant 200 MW farm);
- *  - fibre: proximity decay to the nearest cable landing (proximity is a
- *    screen, not a guarantee of dark fibre — labelled as such in the UI);
+ *  - fibre: own-pipeline backhaul (fibre through the retired export line)
+ *    scores >=0.75 outright; otherwise proximity decay to the nearest cable
+ *    landing (a screen, not a guarantee of dark fibre);
  *  - capacity: topside tonnage headroom for compute/battery decks (log scale,
  *    ~40 kt saturates);
  *  - life: younger structures score higher (installedYear vs a 25-90yr band);
- *  - pipeline: binary reuse credit (H2 comparator, opportunistic offtake).
+ *  - pipeline: binary reuse credit (fibre corridor + H2 comparator).
  */
 export function screenPlatform(p: Platform, d: PlatformDistances, w: ScreenWeights): ScreenResult {
   const windProx = d.nearestWind ? decay(d.nearestWind.km, 40) : 0;
   const windPool = Math.min(d.windWithin60kmMW / 3000, 1);
   const wind = 0.6 * windProx + 0.4 * windPool;
-  const fibre = d.nearestLanding ? decay(d.nearestLanding.km, 80) : 0;
+  // v2 concept: a surviving export pipeline is its own fibre corridor
+  // (flooded lines can carry pulled/floated fibre to shore), so pipeline
+  // reuse guarantees a strong connectivity score; third-party landing
+  // proximity can only improve on it.
+  const landingProx = d.nearestLanding ? decay(d.nearestLanding.km, 80) : 0;
+  const fibre = p.pipelineReuse ? Math.max(0.75, landingProx) : landingProx;
   const capacity = Math.min(Math.log10(Math.max(p.topsideTonnes, 100)) / Math.log10(40_000), 1);
   const age = new Date().getUTCFullYear() - p.installedYear;
   const life = Math.min(Math.max((90 - age) / 65, 0), 1);
