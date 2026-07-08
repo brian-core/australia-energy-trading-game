@@ -29,6 +29,7 @@ import {
   defaultConcept,
   runFeasibility,
   runTornado,
+  runTornadoE,
   type ConceptInputs,
 } from "@/lib/energy/northsea-finance";
 import PriceChart from "@/components/energy/price-chart";
@@ -222,6 +223,9 @@ function buildCandidateProfiles(
       `| B · interruptible compute (v2) | ${Math.round(f.interruptible.capexGBPm)} | ${Math.round(f.interruptible.npvP10GBPm)} | ${Math.round(f.interruptible.npvGBPm)} | ${Math.round(f.interruptible.npvP90GBPm)} | ${Math.round(f.interruptible.probBeatsDecom * 100)}% |`,
       `| C · firm compute + LDES (v1) | ${Math.round(f.compute.capexGBPm)} | ${Math.round(f.compute.npvP10GBPm)} | ${Math.round(f.compute.npvGBPm)} | ${Math.round(f.compute.npvP90GBPm)} | ${Math.round(f.compute.probBeatsDecom * 100)}% |`,
       `| D · H2 electrolysis | ${Math.round(f.h2.capexGBPm)} | ${Math.round(f.h2.npvP10GBPm)} | ${Math.round(f.h2.npvGBPm)} | ${Math.round(f.h2.npvP90GBPm)} | ${Math.round(f.h2.probBeatsDecom * 100)}% |`,
+      `| E · operator-sponsored anchor | ${Math.round(f.operator.capexGBPm)} | ${Math.round(f.operator.npvP10GBPm)} | ${Math.round(f.operator.npvGBPm)} | ${Math.round(f.operator.npvP90GBPm)} | ${Math.round(f.operator.probBeatsDecom * 100)}%* |`,
+      ``,
+      `\*E judged vs decom NET of ${Math.round(c.opDecomReliefRate * 100)}% relief (${Math.round(f.decomNetNpvGBPm)} £m). E terms: £${c.opBaseCapacityRateKwMo}/kW-mo +${Math.round(c.opTimeToPowerPremium * 100)}% time-to-power, ${c.opContractYears}-yr anchor, wind ratio ${c.opTiedWindRatio}×, import ${Math.round(c.opImportShare * 100)}%, availability ${Math.round(f.operator.availability * 100)}%. Operator ledger: deferral credit £${Math.round(f.operator.deferralCreditGBPm)}m, breakeven relief ${f.operator.operatorBreakevenRelief == null ? "n/a" : Math.round(f.operator.operatorBreakevenRelief * 100) + "%"}. Tenant ledger: effective £${Math.round(f.operator.tenantEffectiveKwMo)}/kW-mo vs onshore £${c.opOnshoreRefRateKwMo} at year ${c.opOnshoreQueueYears}.`,
       ``,
       `**Verdict line.** Break-even rate £${Math.round(f.interruptible.breakEvenRateGBPMWh)}/MWh-IT (compute equivalent of H2 at £${c.h2PriceGBPkg.toFixed(2)}/kg) · effective utilisation ${Math.round(f.interruptible.deliveredShare * 100)}% on current GB wind shapes · decom liability deferred ${c.secondLifeYears} yr.`,
       ``,
@@ -334,6 +338,10 @@ export default function NsView() {
     () => (concept && shapes ? runTornado(concept, shapes) : null),
     [concept, shapes],
   );
+  const tornadoE = useMemo(
+    () => (concept && shapes ? runTornadoE(concept, shapes) : null),
+    [concept, shapes],
+  );
 
   const set = (k: keyof ConceptInputs) => (v: number) => setOverrides((o) => ({ ...o, [k]: v }));
 
@@ -431,6 +439,7 @@ export default function NsView() {
                     <tr className="text-left text-[10px] tracking-wider text-[var(--ink-soft)]">
                       <th className="pb-1">#</th>
                       <th>PLATFORM</th>
+                      <th>OPERATOR</th>
                       <th className="text-right">WIND KM</th>
                       <th className="text-right">FIBRE KM</th>
                       <th className="text-right">COP</th>
@@ -446,6 +455,7 @@ export default function NsView() {
                       >
                         <td className="py-0.5 text-[var(--ink-soft)]">{i + 1}</td>
                         <td>{r.platform.name}</td>
+                        <td className="text-[var(--ink-soft)]">{r.platform.operator}</td>
                         <td className="text-right text-[var(--ink-soft)]">
                           {r.distances.nearestWind ? Math.round(r.distances.nearestWind.km) : "—"}
                         </td>
@@ -605,6 +615,35 @@ export default function NsView() {
                     </div>
                   )}
                 </div>
+                <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--edge)" }}>
+                  <div className="mb-1.5 text-[10px] tracking-widest text-[var(--ink-soft)]">
+                    OPERATOR-SPONSOR VARIANT (E) — PLATFORM AT NIL · DECOM NET OF RELIEF, DEFERRAL CREDITED · ANCHOR
+                    TENANCY ON TIME-TO-POWER
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    <NumField label="CAPACITY RATE" value={concept.opBaseCapacityRateKwMo} step={5} suffix="£/kW-mo" onChange={set("opBaseCapacityRateKwMo")} />
+                    <NumField label="T-T-P PREMIUM" value={Math.round(concept.opTimeToPowerPremium * 100)} step={5} suffix="%" onChange={(v) => set("opTimeToPowerPremium")(v / 100)} />
+                    <NumField label="DECOM RELIEF" value={Math.round(concept.opDecomReliefRate * 100)} step={5} suffix="%" onChange={(v) => set("opDecomReliefRate")(v / 100)} />
+                    <NumField label="OPERATOR RATE" value={Math.round(concept.opOperatorDiscount * 1000) / 10} step={0.5} suffix="%" onChange={(v) => set("opOperatorDiscount")(v / 100)} />
+                    <NumField label="WIND RATIO" value={concept.opTiedWindRatio} step={0.1} suffix="× IT" onChange={set("opTiedWindRatio")} />
+                    <NumField label="IMPORT ALLOW" value={Math.round(concept.opImportShare * 100)} step={5} suffix="% of IT" onChange={(v) => set("opImportShare")(v / 100)} />
+                    <NumField label="STRIKE (INTOG)" value={concept.opStrikeGBP} step={1} suffix="£/MWh" onChange={set("opStrikeGBP")} />
+                    <NumField label="CABLE SHARE" value={Math.round(concept.opElecCostShare * 100)} step={10} suffix="% to SPV" onChange={(v) => set("opElecCostShare")(v / 100)} />
+                    <NumField label="CONTRACT TERM" value={concept.opContractYears} step={5} suffix="yr" onChange={set("opContractYears")} />
+                    <NumField label="AVAIL FLOOR" value={Math.round(concept.opAvailabilityFloor * 100)} step={1} suffix="%" onChange={(v) => set("opAvailabilityFloor")(v / 100)} />
+                    <NumField label="GPU FIT-OUT" value={Math.round(concept.opGpuShareOfFitout * 100)} step={10} suffix="% removed" onChange={(v) => set("opGpuShareOfFitout")(v / 100)} />
+                    <NumField label="ANCHOR DEFAULT" value={Math.round(concept.opAnchorDefaultProb * 100)} step={1} suffix="%/path" onChange={(v) => set("opAnchorDefaultProb")(v / 100)} />
+                  </div>
+                  <div className="mt-1 text-[9px] leading-snug text-[var(--ink-soft)]">
+                    Option E asks whether the concept works when priced from the operator&apos;s seat: platform at nil,
+                    decom carried net of tax relief with deferral credited, revenue from a long-term anchor tenancy
+                    sold on time-to-power rather than floor space, and the INTOG developer&apos;s FID-dependence captured
+                    in the strike. A liability-management instrument with an option attached, not an infrastructure
+                    yield play. If the tornado is dominated by the time-to-power premium and capacity rate, the
+                    thesis depends on a compute-scarcity premium persisting into the 2030s — a bet, and it should be
+                    named as one.
+                  </div>
+                </div>
                 <div className="mt-2 space-y-0.5">
                   <Row
                     k={`payload weight — interruptible v2 (${Math.round(intW).toLocaleString()} t)`}
@@ -643,12 +682,20 @@ export default function NsView() {
                     </thead>
                     <tbody>
                       <tr>
-                        <td className="py-0.5">A · decommission now</td>
+                        <td className="py-0.5">A · decommission now (gross)</td>
                         <td className="text-right">{gbpM(feas.decomNow.capexGBPm)}</td>
                         <td className="text-right" colSpan={3}>
                           {gbpM(feas.decomNow.npvGBPm)} (deterministic)
                         </td>
                         <td className="text-right text-[var(--ink-soft)]">—</td>
+                      </tr>
+                      <tr className="text-[var(--ink-soft)]">
+                        <td className="py-0.5">A′ · decom now, net of {Math.round(concept.opDecomReliefRate * 100)}% relief (E&apos;s baseline)</td>
+                        <td className="text-right">{gbpM(feas.operator.netDecomGBPm)}</td>
+                        <td className="text-right" colSpan={3}>
+                          {gbpM(feas.decomNetNpvGBPm)} (deterministic)
+                        </td>
+                        <td className="text-right">—</td>
                       </tr>
                       <tr>
                         <td className="py-0.5">B · interruptible compute (v2)</td>
@@ -669,6 +716,16 @@ export default function NsView() {
                         </td>
                         <td className="text-right">{gbpM(feas.compute.npvP90GBPm)}</td>
                         <td className="text-right">{Math.round(feas.compute.probBeatsDecom * 100)}%</td>
+                      </tr>
+                      <tr>
+                        <td className="py-0.5">E · operator-sponsored anchor</td>
+                        <td className="text-right">{gbpM(feas.operator.capexGBPm)}</td>
+                        <td className="text-right">{gbpM(feas.operator.npvP10GBPm)}</td>
+                        <td className="text-right" style={{ color: feas.operator.npvGBPm >= feas.decomNetNpvGBPm ? "#48a87c" : "#e2483d" }}>
+                          {gbpM(feas.operator.npvGBPm)}
+                        </td>
+                        <td className="text-right">{gbpM(feas.operator.npvP90GBPm)}</td>
+                        <td className="text-right">{Math.round(feas.operator.probBeatsDecom * 100)}%*</td>
                       </tr>
                       <tr>
                         <td className="py-0.5">D · H2 electrolysis</td>
@@ -696,6 +753,26 @@ export default function NsView() {
                       D: {feas.h2.annualKt.toFixed(1)} kt H2/yr at £{concept.h2PriceGBPkg.toFixed(2)}/kg (Aberdeen/NDC
                       anchor) · all repurposing options defer decom {concept.secondLifeYears} yr
                     </div>
+                    <div>
+                      E: £{concept.opBaseCapacityRateKwMo}/kW-mo + {Math.round(concept.opTimeToPowerPremium * 100)}%
+                      time-to-power premium, billed on contracted capacity (floor{" "}
+                      {Math.round(concept.opAvailabilityFloor * 100)}%) · availability{" "}
+                      {Math.round(feas.operator.availability * 100)}% · *P&gt;decom on the NET (A′) baseline ·
+                      anchor default {Math.round(concept.opAnchorDefaultProb * 100)}%/path priced in
+                    </div>
+                    <div>
+                      E operator&apos;s ledger: deferral credit {gbpM(feas.operator.deferralCreditGBPm)} vs conversion
+                      exposure {gbpM(feas.operator.capexGBPm)} · operator breakeven relief{" "}
+                      {feas.operator.operatorBreakevenRelief == null
+                        ? "n/a (no crossing in 0–100%)"
+                        : `${Math.round(feas.operator.operatorBreakevenRelief * 100)}%`}{" "}
+                      · break-even capacity rate £{Math.round(feas.operator.breakEvenRateKwMo)}/kW-mo
+                    </div>
+                    <div>
+                      E tenant&apos;s ledger: effective all-in £{Math.round(feas.operator.tenantEffectiveKwMo)}/kW-mo now
+                      vs reference onshore £{concept.opOnshoreRefRateKwMo}/kW-mo (excl energy) available year{" "}
+                      {concept.opOnshoreQueueYears} — the sale happens only if the premium beats the queue
+                    </div>
                   </div>
                 </Section>
               )}
@@ -703,6 +780,14 @@ export default function NsView() {
               {tornado && (
                 <Section n={5} title="SENSITIVITY — INTERRUPTIBLE (V2) NPV, ±20% PER INPUT">
                   <Tornado rows={tornado} />
+                  {tornadoE && (
+                    <>
+                      <div className="mb-1 mt-3 text-[10px] tracking-widest text-[var(--ink-soft)]">
+                        OPTION E — OPERATOR-SPONSORED ANCHOR, ±20% PER INPUT
+                      </div>
+                      <Tornado rows={tornadoE} />
+                    </>
+                  )}
                 </Section>
               )}
 
