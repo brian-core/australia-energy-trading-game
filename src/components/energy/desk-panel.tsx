@@ -15,7 +15,8 @@ import {
 import { runBacktest } from "@/lib/energy/backtest";
 import type { HistoryPayload, HistoryWindow } from "@/lib/energy/history";
 import { priceColor } from "@/lib/energy/pricing";
-import type { LivePayload } from "@/lib/energy/types";
+import { simulateSpot } from "@/lib/energy/spotsim";
+import type { Facility, LivePayload } from "@/lib/energy/types";
 import PriceChart from "./price-chart";
 
 import { DESK_STORAGE_KEY, loadDeskState, type DeskState } from "@/lib/energy/desk-storage";
@@ -58,6 +59,124 @@ function NumberField({
         style={{ borderColor: "var(--edge)", width }}
       />
     </label>
+  );
+}
+
+/** Structural 12-month spot simulation — the retail-lens view of price risk.
+ *  Unit-level outage Markov over the registered fleet drives quarter-long
+ *  price regimes; outputs are distributions of quarterly averages and the
+ *  book's 12-month margin. See lib/energy/spotsim.ts for the method. */
+function SpotSimCard({ live, book }: { live: LivePayload; book: Book }) {
+  const [facilities, setFacilities] = useState<Facility[] | null>(null);
+  const [hist90, setHist90] = useState<HistoryPayload | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [f, h] = await Promise.all([
+          fetch("/api/energy/facilities").then((r) => r.json() as Promise<{ facilities: Facility[] }>),
+          fetch("/api/energy/history?window=90d").then((r) => r.json() as Promise<HistoryPayload>),
+        ]);
+        if (!cancelled) {
+          setFacilities(f.facilities);
+          setHist90(h);
+        }
+      } catch {
+        // card stays in loading state; the rest of the desk works
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const sim = useMemo(() => {
+    if (!facilities || !hist90) return null;
+    const regions = live.regions
+      .filter((r) => r.demandMW > 0)
+      .map((r) => {
+        const pts = hist90.regions[r.code] ?? [];
+        const avg = pts.length ? pts.reduce((sum, pnt) => sum + pnt[1], 0) / pts.length : (r.priceAUD ?? 90);
+        return { code: r.code, demandAvgMW: r.demandMW, priceAnchorAUD: Math.max(avg, 20) };
+      });
+    return simulateSpot(facilities, regions, {
+      runs: 300,
+      book: { loadsMW: book.loadsMW, flatCkwh: book.flatRateCkwh, nonEnergyCkwh: book.nonEnergyCkwh },
+    });
+  }, [facilities, hist90, live, book]);
+
+  const money = (x: number) => `${x < 0 ? "−" : ""}$${(Math.abs(x) / 1e6).toFixed(1)}m`;
+
+  return (
+    <div className="mt-3 rounded-lg border p-3.5" style={{ borderColor: "var(--edge)" }}>
+      <div className="mb-1.5 text-[11px] tracking-widest text-[var(--ink-soft)]">
+        SPOT SIM — NEXT 12 MONTHS · STRUCTURAL OUTAGE MODEL{sim ? ` · ${sim.runs} RUNS` : ""}
+      </div>
+      {!sim ? (
+        <div className="text-[11px] text-[var(--ink-soft)]">loading fleet register + 90d prices…</div>
+      ) : (
+        <>
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="text-left text-[10px] tracking-wider text-[var(--ink-soft)]">
+                <th className="pb-1">RGN</th>
+                <th className="text-right">FLEET</th>
+                <th className="text-right">YR AVG P50</th>
+                <th className="text-right">P90</th>
+                <th className="text-right">WORST-Q P90</th>
+                <th className="text-right">P(Q&gt;$150)</th>
+                <th className="text-right">P(Q&gt;$300)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sim.regions.map((r) => {
+                const worstQ = Math.max(...r.quarters.map((q) => q.p90));
+                return (
+                  <tr key={r.code}>
+                    <td className="py-0.5">{r.code.replace(/\d$/, "")}</td>
+                    <td className="text-right text-[var(--ink-soft)]">{r.thermalUnits}u</td>
+                    <td className="text-right">${r.annual.p50.toFixed(0)}</td>
+                    <td className="text-right">${r.annual.p90.toFixed(0)}</td>
+                    <td className="text-right" style={{ color: worstQ > 200 ? "#e2483d" : worstQ > 130 ? "#f2c14e" : "inherit" }}>
+                      ${worstQ.toFixed(0)}
+                    </td>
+                    <td className="text-right">{Math.round(r.probQuarterOver150 * 100)}%</td>
+                    <td className="text-right" style={{ color: r.probQuarterOver300 > 0.05 ? "#e2483d" : "inherit" }}>
+                      {Math.round(r.probQuarterOver300 * 100)}%
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {sim.book && (
+            <div className="mt-2 space-y-0.5 border-t pt-1.5 text-[11px]" style={{ borderColor: "var(--edge)" }}>
+              <div className="flex justify-between">
+                <span className="text-[var(--ink-soft)]">book margin, 12 months (P10 / P50 / P90)</span>
+                <span>
+                  <span style={{ color: sim.book.annualMarginP10 < 0 ? "#e2483d" : "var(--gen)" }}>{money(sim.book.annualMarginP10)}</span>
+                  {" / "}
+                  {money(sim.book.annualMarginP50)}
+                  {" / "}
+                  {money(sim.book.annualMarginP90)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--ink-soft)]">P(at least one negative quarter)</span>
+                <span style={{ color: sim.book.probNegativeQuarter > 0.2 ? "#e2483d" : sim.book.probNegativeQuarter > 0.05 ? "#f2c14e" : "var(--gen)" }}>
+                  {Math.round(sim.book.probNegativeQuarter * 100)}%
+                </span>
+              </div>
+            </div>
+          )}
+          <div className="mt-1.5 text-[9px] leading-snug text-[var(--ink-soft)]">
+            method: {sim.method}. outage rates are reference values; price anchor is live. quarters within a run
+            share the same outage/weather draw, so book risk carries real correlation.
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -470,6 +589,8 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
           </div>
         )}
       </div>
+
+      <SpotSimCard live={live} book={state.book} />
     </div>
   );
 }
