@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/energy/supabase-admin";
+import { fetchBoeBankRate, fetchOnsCpi } from "@/lib/energy/gb";
 import { fetchAbsCpi, fetchFx } from "@/lib/energy/macro";
 import {
   fetchRbaCsv,
@@ -95,6 +96,69 @@ async function ingestRbaTables(sb: SupabaseAdmin): Promise<SourceSummary[]> {
   return out;
 }
 
+/** UK macro for the North Sea view: BoE Bank Rate (full daily history from
+ *  the IADB CSV) and ONS CPI (monthly year-ended rate), sources 'BOE'/'ONS'. */
+async function ingestUk(sb: SupabaseAdmin): Promise<SourceSummary[]> {
+  const out: SourceSummary[] = [];
+
+  try {
+    const boe = await fetchBoeBankRate();
+    if (boe) {
+      const obs: MacroObservation[] = boe.csv
+        .trim()
+        .split("\n")
+        .slice(1)
+        .map((line): MacroObservation | null => {
+          const [d, v] = line.split(",");
+          const ms = Date.parse(d);
+          const value = Number(v);
+          if (!Number.isFinite(ms) || !Number.isFinite(value)) return null;
+          return {
+            source: "BOE",
+            series_id: "IUDBEDR",
+            series_label: "Official Bank Rate",
+            unit: "Per cent",
+            frequency: "Daily",
+            obs_date: new Date(ms).toISOString().slice(0, 10),
+            value,
+          };
+        })
+        .filter((o): o is MacroObservation => o !== null);
+      out.push(await ingestDrop(sb, "BOE", "iudbedr", boe.csv, { rows: obs.length }, obs));
+    }
+  } catch (e) {
+    out.push({ source: "BOE", tableCode: "iudbedr", status: "error", detail: String(e) });
+  }
+
+  try {
+    const ons = await fetchOnsCpi();
+    if (ons) {
+      const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+      const obs: MacroObservation[] = ons.months
+        .map((m): MacroObservation | null => {
+          const [y, mon] = m.date.split(" ");
+          const idx = MONTHS.indexOf(mon);
+          if (idx < 0) return null;
+          return {
+            source: "ONS",
+            series_id: "D7G7",
+            series_label: "CPI annual rate, all items",
+            unit: "Per cent",
+            frequency: "Monthly",
+            obs_date: `${y}-${String(idx + 1).padStart(2, "0")}-01`,
+            value: m.value,
+          };
+        })
+        .filter((o): o is MacroObservation => o !== null);
+      out.push(await ingestDrop(sb, "ONS", "d7g7", JSON.stringify(ons.months), { months: ons.months }, obs));
+    }
+  } catch (e) {
+    out.push({ source: "ONS", tableCode: "d7g7", status: "error", detail: String(e) });
+  }
+
+  return out;
+}
+
 /** Best-effort persistence of the live FX + ABS CPI snapshots into the same
  *  tables (source 'FX' / 'ABS'), so they share one normalised store. */
 async function ingestFxAbs(sb: SupabaseAdmin): Promise<SourceSummary[]> {
@@ -162,7 +226,7 @@ async function runIngestion() {
       { status: 503 },
     );
   }
-  const results = [...(await ingestRbaTables(sb)), ...(await ingestFxAbs(sb))];
+  const results = [...(await ingestRbaTables(sb)), ...(await ingestFxAbs(sb)), ...(await ingestUk(sb))];
   const ok = results.every((r) => r.status !== "error");
   return NextResponse.json({ ok, ranAt: new Date().toISOString(), results }, { status: ok ? 200 : 207 });
 }
