@@ -167,6 +167,100 @@ function Tornado({ rows }: { rows: ReturnType<typeof runTornado> }) {
   );
 }
 
+function download(filename: string, text: string, mime: string) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: mime }));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/** The brief's §7 deliverable: top-N candidates, a one-page profile each,
+ *  with the four-option appraisal run at default concepts on current shapes. */
+function buildCandidateProfiles(
+  results: ScreenResult[],
+  weights: ScreenWeights,
+  shapes: ReturnType<typeof buildYearShapes>,
+  macro: UkMacro | null,
+  marketDemo: boolean,
+  n = 4,
+): string {
+  const date = new Date().toISOString().slice(0, 10);
+  const md: string[] = [
+    `# North Sea Platform Repurposing — Top ${n} Candidates`,
+    ``,
+    `Generated ${date} · screening weights: wind ${weights.wind} / fibre ${weights.fibre} / capacity ${weights.capacity} / life ${weights.life} / pipeline ${weights.pipeline}`,
+    `Market basis: GB spot & wind (Elexon${marketDemo ? ", SYNTHETIC fallback" : ""}) · discount = BoE ${macro?.bankRate.pct.toFixed(2) ?? "ref"}% + 4% · inflation = ONS CPI ${macro?.cpi.yoyPct.toFixed(1) ?? "ref"}%`,
+    ``,
+    `Screening-grade appraisal, not engineering data — tonnages/COP flagged (est) are estimates; fibre proximity screens connectivity potential, it does not guarantee dark fibre.`,
+    ``,
+  ];
+  results.slice(0, n).forEach((r, i) => {
+    const p = r.platform;
+    const c = defaultConcept(
+      p,
+      r.distances.nearestWind?.km ?? 100,
+      r.distances.nearestLanding?.km ?? 150,
+      macro ? { discountRate: macro.bankRate.pct / 100 + EQUITY_PREMIUM, inflation: macro.cpi.yoyPct / 100 } : undefined,
+    );
+    const f = runFeasibility(c, shapes);
+    const est = (k: string) => (p.estimated.includes(k) ? " (est)" : "");
+    md.push(
+      `---`,
+      ``,
+      `## ${i + 1}. ${p.name} — screen score ${Math.round(r.score)}/100`,
+      ``,
+      `**Site.** ${p.operator} · ${p.field} field · ${p.type} · installed ${p.installedYear} · COP ${p.copYear}${est("copYear")} (${p.status}${p.nstaStatus ? `; NSTA registry: ${p.nstaStatus}` : ""}) · water depth ${p.waterDepthM} m · topside ${p.topsideTonnes.toLocaleString()} t${est("topsideTonnes")}.`,
+      ``,
+      `**Infrastructure.** Nearest wind: ${r.distances.nearestWind ? `${r.distances.nearestWind.farm.name} at ${Math.round(r.distances.nearestWind.km)} km` : "—"} · wind pool ≤60 km: ${Math.round(r.distances.windWithin60kmMW).toLocaleString()} MW · nearest fibre landing: ${r.distances.nearestLanding ? `${r.distances.nearestLanding.landing.name} at ${Math.round(r.distances.nearestLanding.km)} km` : "—"} · export pipeline reuse: ${p.pipelineReuse ? "yes — own fibre-backhaul corridor" : "NO — fibre requires subsea lay"}.`,
+      ``,
+      `**Default concept (v2 interruptible).** ${c.computeMW} MW IT · tied wind ${c.tiedWindMW} MW · strike £${c.intStrikeGBP}/MWh · rate £${c.intRevenueGBPPerMWhIT}/MWh-IT · onshore node ${Math.round(c.onshoreNodeShare * 100)}% · GPU refresh ${Math.round(c.refreshShare * 100)}% of capex / ${c.refreshYears} yr.`,
+      ``,
+      `| Option | Capex £m | NPV P10 | NPV P50 | NPV P90 | P>decom |`,
+      `|---|---|---|---|---|---|`,
+      `| A · decommission now | ${Math.round(f.decomNow.capexGBPm)} | — | ${Math.round(f.decomNow.npvGBPm)} | — | — |`,
+      `| B · interruptible compute (v2) | ${Math.round(f.interruptible.capexGBPm)} | ${Math.round(f.interruptible.npvP10GBPm)} | ${Math.round(f.interruptible.npvGBPm)} | ${Math.round(f.interruptible.npvP90GBPm)} | ${Math.round(f.interruptible.probBeatsDecom * 100)}% |`,
+      `| C · firm compute + LDES (v1) | ${Math.round(f.compute.capexGBPm)} | ${Math.round(f.compute.npvP10GBPm)} | ${Math.round(f.compute.npvGBPm)} | ${Math.round(f.compute.npvP90GBPm)} | ${Math.round(f.compute.probBeatsDecom * 100)}% |`,
+      `| D · H2 electrolysis | ${Math.round(f.h2.capexGBPm)} | ${Math.round(f.h2.npvP10GBPm)} | ${Math.round(f.h2.npvGBPm)} | ${Math.round(f.h2.npvP90GBPm)} | ${Math.round(f.h2.probBeatsDecom * 100)}% |`,
+      ``,
+      `**Verdict line.** Break-even rate £${Math.round(f.interruptible.breakEvenRateGBPMWh)}/MWh-IT (compute equivalent of H2 at £${c.h2PriceGBPkg.toFixed(2)}/kg) · effective utilisation ${Math.round(f.interruptible.deliveredShare * 100)}% on current GB wind shapes · decom liability deferred ${c.secondLifeYears} yr.`,
+      ``,
+      `**Gating items.** Structural recertification (remediation mean £${c.remediationMeanGBPm}m, fat-tailed) · pipeline pigging records under operator NDA${p.pipelineReuse ? "" : " (n/a — no surviving line)"} · behind-the-meter offtake appetite with the ${r.distances.nearestWind?.farm.name ?? "adjacent"} developer · OSPAR 98/3 derogation pathway.`,
+      ``,
+    );
+  });
+  md.push(
+    `---`,
+    ``,
+    `Data: platforms curated from public sources, coords/status verified vs NSTA registry (Jul 2026) · wind: Crown Estate rounds incl INTOG · fibre landings: public references incl Tampnet · GB market: Elexon · macro: BoE/ONS. Screening tool: /northsea.`,
+  );
+  return md.join("\n");
+}
+
+function buildFleetCsv(results: ScreenResult[]): string {
+  const rows = [
+    "rank,platform,operator,type,installed,cop,status,nsta_status,score,wind_km,nearest_wind,wind_pool_60km_mw,fibre_km,nearest_landing,pipeline_reuse,topside_t,water_depth_m",
+  ];
+  results.forEach((r, i) => {
+    const p = r.platform;
+    const q = (x: string) => `"${x.replace(/"/g, '""')}"`;
+    rows.push(
+      [
+        i + 1, q(p.name), q(p.operator), p.type, p.installedYear, p.copYear, p.status, q(p.nstaStatus ?? ""),
+        Math.round(r.score),
+        r.distances.nearestWind ? Math.round(r.distances.nearestWind.km) : "",
+        q(r.distances.nearestWind?.farm.name ?? ""),
+        Math.round(r.distances.windWithin60kmMW),
+        r.distances.nearestLanding ? Math.round(r.distances.nearestLanding.km) : "",
+        q(r.distances.nearestLanding?.landing.name ?? ""),
+        p.pipelineReuse ? "yes" : "no",
+        p.topsideTonnes, p.waterDepthM,
+      ].join(","),
+    );
+  });
+  return rows.join("\n");
+}
+
 export default function NsView() {
   const [market, setMarket] = useState<GbMarketPayload | null>(null);
   const [macro, setMacro] = useState<UkMacro | null>(null);
@@ -299,6 +393,39 @@ export default function NsView() {
               </Section>
 
               <Section n={2} title={`RANKED FLEET — ${PLATFORMS.length} CANDIDATES`}>
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() =>
+                      shapes &&
+                      download(
+                        `northsea-top-candidates-${new Date().toISOString().slice(0, 10)}.md`,
+                        buildCandidateProfiles(results, weights, shapes, macro, !!market?.demo),
+                        "text/markdown",
+                      )
+                    }
+                    disabled={!shapes}
+                    className="rounded border px-2 py-0.5 text-[10px] tracking-widest disabled:opacity-40"
+                    style={{ borderColor: "var(--edge)", color: "var(--ink)" }}
+                  >
+                    ⭳ TOP-4 PROFILES (.MD)
+                  </button>
+                  <button
+                    onClick={() =>
+                      download(
+                        `northsea-ranked-fleet-${new Date().toISOString().slice(0, 10)}.csv`,
+                        buildFleetCsv(results),
+                        "text/csv",
+                      )
+                    }
+                    className="rounded border px-2 py-0.5 text-[10px] tracking-widest"
+                    style={{ borderColor: "var(--edge)", color: "var(--ink)" }}
+                  >
+                    ⭳ RANKED FLEET (.CSV)
+                  </button>
+                  <span className="self-center text-[9px] text-[var(--ink-soft)]">
+                    profiles run the full four-option appraisal per platform at current weights & live macro
+                  </span>
+                </div>
                 <table className="w-full">
                   <thead>
                     <tr className="text-left text-[10px] tracking-wider text-[var(--ink-soft)]">
