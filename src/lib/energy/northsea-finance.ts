@@ -97,7 +97,12 @@ export interface ConceptInputs {
   opTiedWindRatio: number; // MW wind : MW IT (fatter than Option B's 1.5×)
   opImportShare: number; // grid import allowance via the wind farm's export connection, share of IT load
   opWheelingGBP: number; // £/MWh adder on hourly spot for imports
-  opAvailabilityFloor: number; // capacity billing abates pro-rata below this monthly availability
+  opAvailabilityFloor: number; // SLA floor; with legacy billing, abatement is pro-rata below it
+  /** Bill on DELIVERED availability (contracted × rate × monthly availability)
+   *  rather than contracted capacity with below-floor abatement. The tenant-
+   *  indifference repair: a 75%-available interruptible product cannot bill
+   *  like five-nines onshore capacity. */
+  opBillOnDelivered: boolean;
   opAnchorDefaultProb: number; // per-path probability the anchor defaults mid-term
   opOnshoreRefRateKwMo: number; // tenant ledger: reference onshore rate...
   opOnshoreQueueYears: number; // ...available only after this grid-queue delay
@@ -178,7 +183,10 @@ export function defaultConcept(
     onshoreCapexGBPmPerMW: 4,
     refreshYears: 4,
     refreshShare: 0.15,
-    opBaseCapacityRateKwMo: 110,
+    // Tenant-indifference pricing: onshore ref £95 × ~0.75 availability
+    // haircut × modest time-to-power uplift — NOT the onshore firm-capacity
+    // convention the first draft wrongly imported.
+    opBaseCapacityRateKwMo: 90,
     opTimeToPowerPremium: 0.35,
     opElecCostShare: 0.5,
     opGpuShareOfFitout: 0.6,
@@ -192,7 +200,8 @@ export function defaultConcept(
     opTiedWindRatio: 2.2,
     opImportShare: 0.15,
     opWheelingGBP: 12,
-    opAvailabilityFloor: 0.92,
+    opAvailabilityFloor: 0.78,
+    opBillOnDelivered: true,
     opAnchorDefaultProb: 0.04,
     opOnshoreRefRateKwMo: 95,
     opOnshoreQueueYears: 5,
@@ -440,7 +449,16 @@ function anchorYearRevenueGBP(c: ConceptInputs, bal: OpBalance, d: OpDraws): num
   const kw = c.computeMW * 1000;
   const monthBill = kw * d.capacityRateKwMo * (1 + d.premium);
   let billed = 0;
-  for (const a of bal.monthlyAvail) billed += monthBill * (a >= c.opAvailabilityFloor ? 1 : a / c.opAvailabilityFloor);
+  for (const a of bal.monthlyAvail) {
+    if (c.opBillOnDelivered) {
+      // Delivered-availability billing: the tenant pays for what the wind
+      // actually carried. The floor is then a real SLA (met or breached),
+      // not a permanent discount mechanism.
+      billed += monthBill * Math.min(a, 1);
+    } else {
+      billed += monthBill * (a >= c.opAvailabilityFloor ? 1 : a / c.opAvailabilityFloor);
+    }
+  }
   return billed;
 }
 

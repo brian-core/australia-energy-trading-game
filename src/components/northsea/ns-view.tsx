@@ -296,7 +296,7 @@ function buildStudyMd(
     ``,
     `V2 interruptible: ${c.computeMW} MW IT · PUE ${c.pue} · rate £${c.intRevenueGBPPerMWhIT}/MWh-IT · strike £${c.intStrikeGBP} · min-load ${Math.round(c.intMinLoadShare * 100)}% · onshore node ${Math.round(c.onshoreNodeShare * 100)}% · refresh ${Math.round(c.refreshShare * 100)}%/${c.refreshYears}yr · second life ${c.secondLifeYears} yr`,
     ``,
-    `Option E: capacity £${c.opBaseCapacityRateKwMo}/kW-mo + ${Math.round(c.opTimeToPowerPremium * 100)}% time-to-power · term ${c.opContractYears} yr · relief ${Math.round(c.opDecomReliefRate * 100)}% (operator rate ${Math.round(c.opOperatorDiscount * 100)}%, deferral credit ${c.opDeferralCredit ? "ON" : "OFF"}) · wind ratio ${c.opTiedWindRatio}× · import ${Math.round(c.opImportShare * 100)}% @ spot+£${c.opWheelingGBP} · strike £${c.opStrikeGBP} · cable share ${Math.round(c.opElecCostShare * 100)}% · floor ${Math.round(c.opAvailabilityFloor * 100)}% · GPU fit-out removed ${Math.round(c.opGpuShareOfFitout * 100)}% · anchor default ${Math.round(c.opAnchorDefaultProb * 100)}%/path`,
+    `Option E: capacity £${c.opBaseCapacityRateKwMo}/kW-mo + ${Math.round(c.opTimeToPowerPremium * 100)}% time-to-power · term ${c.opContractYears} yr · relief ${Math.round(c.opDecomReliefRate * 100)}% (operator rate ${Math.round(c.opOperatorDiscount * 100)}%, deferral credit ${c.opDeferralCredit ? "ON" : "OFF"}) · wind ratio ${c.opTiedWindRatio}× · import ${Math.round(c.opImportShare * 100)}% @ spot+£${c.opWheelingGBP} · strike £${c.opStrikeGBP} · cable share ${Math.round(c.opElecCostShare * 100)}% · billed on ${c.opBillOnDelivered ? "DELIVERED availability" : "contracted capacity"} (SLA floor ${Math.round(c.opAvailabilityFloor * 100)}%) · energy margin ${Math.round(c.opEnergyMargin * 100)}% · GPU fit-out removed ${Math.round(c.opGpuShareOfFitout * 100)}% · anchor default ${Math.round(c.opAnchorDefaultProb * 100)}%/path`,
     ``,
     `## 3. Options appraisal (shared MC paths, ×${f.runs})`,
     ``,
@@ -730,9 +730,20 @@ export default function NsView() {
                     <NumField label="STRIKE (INTOG)" value={concept.opStrikeGBP} step={1} suffix="£/MWh" onChange={set("opStrikeGBP")} />
                     <NumField label="CABLE SHARE" value={Math.round(concept.opElecCostShare * 100)} step={10} suffix="% to SPV" onChange={(v) => set("opElecCostShare")(v / 100)} />
                     <NumField label="CONTRACT TERM" value={concept.opContractYears} step={5} suffix="yr" onChange={set("opContractYears")} />
-                    <NumField label="AVAIL FLOOR" value={Math.round(concept.opAvailabilityFloor * 100)} step={1} suffix="%" onChange={(v) => set("opAvailabilityFloor")(v / 100)} />
+                    <NumField label="AVAIL FLOOR (SLA)" value={Math.round(concept.opAvailabilityFloor * 100)} step={1} suffix="%" onChange={(v) => set("opAvailabilityFloor")(v / 100)} />
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-[10px] tracking-wider text-[var(--ink-soft)]">BILLING BASIS</span>
+                      <button
+                        onClick={() => setOverrides((o) => ({ ...o, opBillOnDelivered: !concept.opBillOnDelivered }))}
+                        className="rounded border px-1 py-0.5 text-[11px]"
+                        style={{ borderColor: "var(--edge)" }}
+                      >
+                        {concept.opBillOnDelivered ? "delivered availability" : "contracted (abate < floor)"}
+                      </button>
+                    </label>
                     <NumField label="GPU FIT-OUT" value={Math.round(concept.opGpuShareOfFitout * 100)} step={10} suffix="% removed" onChange={(v) => set("opGpuShareOfFitout")(v / 100)} />
                     <NumField label="ANCHOR DEFAULT" value={Math.round(concept.opAnchorDefaultProb * 100)} step={1} suffix="%/path" onChange={(v) => set("opAnchorDefaultProb")(v / 100)} />
+                    <NumField label="ENERGY MARGIN" value={Math.round(concept.opEnergyMargin * 100)} step={5} suffix="% (−100 = SPV pays)" onChange={(v) => set("opEnergyMargin")(v / 100)} />
                   </div>
                   <div className="mt-1 text-[9px] leading-snug text-[var(--ink-soft)]">
                     Option E asks whether the concept works when priced from the operator&apos;s seat: platform at nil,
@@ -855,8 +866,9 @@ export default function NsView() {
                     </div>
                     <div>
                       E: £{concept.opBaseCapacityRateKwMo}/kW-mo + {Math.round(concept.opTimeToPowerPremium * 100)}%
-                      time-to-power premium, billed on contracted capacity (floor{" "}
-                      {Math.round(concept.opAvailabilityFloor * 100)}%) · availability{" "}
+                      time-to-power premium, billed on {concept.opBillOnDelivered ? "delivered availability" : "contracted capacity"} (SLA floor{" "}
+                      {Math.round(concept.opAvailabilityFloor * 100)}%
+                      {concept.opBillOnDelivered ? (feas.operator.availability >= concept.opAvailabilityFloor ? " — met" : " — BREACHED") : ""}) · availability{" "}
                       {Math.round(feas.operator.availability * 100)}% · *P&gt;decom on the NET (A′) baseline ·
                       anchor default {Math.round(concept.opAnchorDefaultProb * 100)}%/path priced in
                     </div>
