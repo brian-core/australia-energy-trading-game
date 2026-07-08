@@ -75,6 +75,32 @@ export interface ConceptInputs {
    *  swap campaign + host-side infra only (customer owns the GPUs at a
    *  hosting rate); raise toward 0.35+ if the host owns the hardware. */
   refreshShare: number;
+  // Option E — operator-sponsored anchor tenancy: the same physical concept
+  // repriced from the operator's seat. Platform contributed at nil into an
+  // SPV; decom carried NET of ring-fence tax relief with the deferral
+  // credited; revenue from a long-term powered-capacity anchor tenancy
+  // (tenant owns and refreshes the GPUs) priced at a time-to-power premium;
+  // the INTOG developer's FID-dependence lands as a strike discount and
+  // cable cost-share. A liability-management instrument with an option
+  // attached, not an infrastructure yield play.
+  opBaseCapacityRateKwMo: number; // £/kW-IT/month, powered capacity (tenant pays energy)
+  opTimeToPowerPremium: number; // fraction on top of base rate (MC: triangular 10-70%)
+  opElecCostShare: number; // share of the AC tie cable borne by the SPV (operator pays rest)
+  opGpuShareOfFitout: number; // GPU share of IT fit-out removed (tenant-owned silicon)
+  opStrikeGBP: number; // £/MWh — INTOG anchor discount vs Option B's strike
+  opEnergyMargin: number; // energy passes through at cost × (1 + margin); margin is SPV revenue
+  opRefreshRechargeGBPmPer100MW: number; // tenant GPU-swap marine campaigns, recharged at cost + 15%
+  opContractYears: number; // anchor term; merchant (Option B logic) thereafter
+  opDecomReliefRate: number; // UK ring-fence relief; net decom = gross × (1 − relief)
+  opOperatorDiscount: number; // operator's rate for the deferral-credit calc
+  opDeferralCredit: boolean; // credit net-decom deferral as a year-0 SPV benefit
+  opTiedWindRatio: number; // MW wind : MW IT (fatter than Option B's 1.5×)
+  opImportShare: number; // grid import allowance via the wind farm's export connection, share of IT load
+  opWheelingGBP: number; // £/MWh adder on hourly spot for imports
+  opAvailabilityFloor: number; // capacity billing abates pro-rata below this monthly availability
+  opAnchorDefaultProb: number; // per-path probability the anchor defaults mid-term
+  opOnshoreRefRateKwMo: number; // tenant ledger: reference onshore rate...
+  opOnshoreQueueYears: number; // ...available only after this grid-queue delay
   // Decom baseline
   decomCostGBPm: number;
   // Macro
@@ -152,6 +178,24 @@ export function defaultConcept(
     onshoreCapexGBPmPerMW: 4,
     refreshYears: 4,
     refreshShare: 0.15,
+    opBaseCapacityRateKwMo: 110,
+    opTimeToPowerPremium: 0.35,
+    opElecCostShare: 0.5,
+    opGpuShareOfFitout: 0.6,
+    opStrikeGBP: 28,
+    opEnergyMargin: 0.1,
+    opRefreshRechargeGBPmPer100MW: 2,
+    opContractYears: 15,
+    opDecomReliefRate: 0.55,
+    opOperatorDiscount: 0.08,
+    opDeferralCredit: true,
+    opTiedWindRatio: 2.2,
+    opImportShare: 0.15,
+    opWheelingGBP: 12,
+    opAvailabilityFloor: 0.92,
+    opAnchorDefaultProb: 0.04,
+    opOnshoreRefRateKwMo: 95,
+    opOnshoreQueueYears: 5,
     decomCostGBPm: decom,
     discountRate: macro?.discountRate ?? 0.085,
     inflation: macro?.inflation ?? 0.028,
@@ -320,6 +364,148 @@ function interruptibleFlows(c: ConceptInputs, bal: IntBalance, remediation: numb
   return flows;
 }
 
+// --- Option E: operator-sponsored anchor tenancy --------------------------------
+
+interface OpBalance {
+  deliveredITMWh: number;
+  windConsumedMWh: number;
+  importMWh: number;
+  importCostGBP: number; // hourly spot × priceMult + wheeling
+  /** Per-billing-month availability (delivered IT / nameplate IT). */
+  monthlyAvail: number[];
+  availability: number;
+}
+
+/** Hourly balance with the E levers: fatter tied-wind ratio and a grid-import
+ *  allowance through the wind farm's export connection during lulls. */
+function runOperatorBalance(c: ConceptInputs, shapes: YearShapes, priceMult: number, windMult: number): OpBalance {
+  const loadMax = c.computeMW * c.pue;
+  const tiedWind = c.computeMW * c.opTiedWindRatio;
+  const importCap = loadMax * c.opImportShare;
+  let delivered = 0;
+  let windConsumed = 0;
+  let importMWh = 0;
+  let importCost = 0;
+  const monthly = new Array(12).fill(0);
+  for (let h = 0; h < 8760; h++) {
+    const wind = tiedWind * Math.min(shapes.windCf[h] * windMult, 1);
+    let supply = Math.min(wind, loadMax);
+    let imp = 0;
+    if (supply < loadMax && importCap > 0) {
+      imp = Math.min(loadMax - supply, importCap);
+      supply += imp;
+    }
+    if (supply >= loadMax * c.intMinLoadShare) {
+      delivered += supply / c.pue;
+      windConsumed += supply - imp;
+      importMWh += imp;
+      if (imp > 0) importCost += imp * (Math.max(shapes.spot[h] * priceMult, 0) + c.opWheelingGBP);
+      monthly[Math.min(Math.floor(h / 730), 11)] += supply / c.pue;
+    }
+  }
+  const monthCap = c.computeMW * 730;
+  return {
+    deliveredITMWh: delivered,
+    windConsumedMWh: windConsumed,
+    importMWh,
+    importCostGBP: importCost,
+    monthlyAvail: monthly.map((m) => m / monthCap),
+    availability: delivered / (c.computeMW * 8760),
+  };
+}
+
+function opCapexGBPm(c: ConceptInputs): number {
+  return (
+    c.intConversionGBPm + // physics doesn't care who the sponsor is
+    c.computeMW * c.intComputeCapexGBPmPerMW * (1 - c.opGpuShareOfFitout) + // tenant-owned silicon removed
+    c.bessCapexGBPm +
+    c.windDistanceKm * c.acCableGBPmPerKm * c.opElecCostShare + // operator electrification cost-share
+    c.fibrePullGBPm +
+    c.computeMW * c.onshoreNodeShare * c.onshoreCapexGBPmPerMW
+    // platform acquisition: nil consideration into the SPV
+  );
+}
+
+interface OpDraws {
+  premium: number;
+  capacityRateKwMo: number;
+  relief: number;
+  /** Anchor default year (1-based) or null; 12-month re-let void, then merchant. */
+  defaultYear: number | null;
+}
+
+/** Capacity billing for one anchor year: contracted IT MW × rate × (1+premium),
+ *  abating pro-rata in months where availability falls below the floor. */
+function anchorYearRevenueGBP(c: ConceptInputs, bal: OpBalance, d: OpDraws): number {
+  const kw = c.computeMW * 1000;
+  const monthBill = kw * d.capacityRateKwMo * (1 + d.premium);
+  let billed = 0;
+  for (const a of bal.monthlyAvail) billed += monthBill * (a >= c.opAvailabilityFloor ? 1 : a / c.opAvailabilityFloor);
+  return billed;
+}
+
+/** Cashflows (£m/yr) for Option E, one MC draw. Merchant fallback (Option B
+ *  revenue logic on the same physical config) after the anchor term or after
+ *  an anchor default + 12-month void. */
+function operatorFlows(
+  c: ConceptInputs,
+  bal: OpBalance,
+  d: OpDraws,
+  remediation: number,
+  rateMult: number,
+): number[] {
+  const netDecom = c.decomCostGBPm * (1 - d.relief);
+  const capex = opCapexGBPm(c) + remediation;
+  const flows: number[] = [-capex / 2, -capex / 2];
+  // Deferral credit: the operator's reason to sponsor at nil — a year-0
+  // benefit line worth net-decom × (1 − 1/(1+r_op)^T).
+  if (c.opDeferralCredit) {
+    flows[0] += netDecom * (1 - 1 / Math.pow(1 + c.opOperatorDiscount, c.secondLifeYears));
+  }
+  const energyCost = (bal.windConsumedMWh * c.opStrikeGBP + bal.importCostGBP) / 1e6; // £m
+  const rechargeCost = (c.opRefreshRechargeGBPmPer100MW * c.computeMW) / 100;
+  for (let k = 1; k <= c.secondLifeYears; k++) {
+    const esc = Math.pow(1 + c.inflation, k - 1);
+    const opex = (c.computeMW * c.intOpexKGBPPerMWyr * 1000 * esc) / 1e6;
+    const inAnchor = k <= c.opContractYears && (d.defaultYear === null || k < d.defaultYear);
+    const voidYear = d.defaultYear !== null && k === d.defaultYear;
+    let net: number;
+    if (inAnchor) {
+      // Tenant pays energy at cost × (1+margin): the margin is SPV revenue,
+      // the cost itself passes through. Refresh campaigns recharged at +15%.
+      const revenue = (anchorYearRevenueGBP(c, bal, d) / 1e6 + energyCost * c.opEnergyMargin + rechargeCost * 0.15) * esc;
+      net = revenue - opex;
+    } else if (voidYear) {
+      net = -opex; // 12-month re-let void: cluster idle, no revenue, no energy
+    } else {
+      // Merchant (Option B logic): £/MWh-IT on delivered, SPV pays energy.
+      // Refresh applies to the host-owned share of the hardware (full B
+      // parity when opGpuShareOfFitout = 0).
+      const revenue = (bal.deliveredITMWh * c.intRevenueGBPPerMWhIT * rateMult * esc) / 1e6;
+      const refresh =
+        c.refreshYears > 0 && k % c.refreshYears === 0 && k <= c.secondLifeYears - 2
+          ? c.computeMW * c.intComputeCapexGBPmPerMW * c.refreshShare * (1 - c.opGpuShareOfFitout) * esc
+          : 0;
+      net = revenue - energyCost * esc - opex - refresh;
+    }
+    flows.push(net);
+  }
+  // Exit decom at NET cost — deferred and funded, not laundered.
+  flows.push(-netDecom * Math.pow(1 + c.inflation, c.secondLifeYears + 1));
+  return flows;
+}
+
+/** Decom-now at NET-of-relief cost (Option A on the basis E is judged against). */
+function decomNetFlows(c: ConceptInputs, relief: number): number[] {
+  return [0, 1, 2].map((t) => ((-c.decomCostGBPm * (1 - relief)) / 3) * Math.pow(1 + c.inflation, t));
+}
+
+/** Triangular(lo, mode, hi) via inverse CDF. */
+function triangular(u: number, lo: number, mode: number, hi: number): number {
+  const f = (mode - lo) / (hi - lo);
+  return u < f ? lo + Math.sqrt(u * (hi - lo) * (mode - lo)) : hi - Math.sqrt((1 - u) * (hi - lo) * (hi - mode));
+}
+
 // --- Appraisal ----------------------------------------------------------------
 
 export interface OptionAppraisal {
@@ -342,6 +528,22 @@ export interface FeasibilityResult {
     probBeatsDecom: number;
     /** £/MWh-IT at which the option's NPV equals decom-now. */
     breakEvenRateGBPMWh: number;
+  };
+  /** Decom-now at NET-of-relief cost — the baseline Option E is judged on. */
+  decomNetNpvGBPm: number;
+  /** Option E: operator-sponsored anchor tenancy. */
+  operator: OptionAppraisal & {
+    availability: number;
+    /** vs the NET decom baseline. */
+    probBeatsDecom: number;
+    /** £/kW-IT/month at which E's NPV equals net decom-now. */
+    breakEvenRateKwMo: number;
+    deferralCreditGBPm: number;
+    netDecomGBPm: number;
+    /** Relief rate at which E ≥ net decom for the operator; null if unbracketed. */
+    operatorBreakevenRelief: number | null;
+    /** Tenant ledger: effective all-in £/kW-IT/month, year 1. */
+    tenantEffectiveKwMo: number;
   };
   runs: number;
 }
@@ -444,10 +646,20 @@ export function runFeasibility(c: ConceptInputs, shapes: YearShapes, runs = 200,
   const h2C = h2Flows(c, shapes, 1, c.remediationMeanGBPm, c.h2PriceGBPkg);
   const intBalC = runInterruptibleBalance(c, shapes, 1);
   const intC = interruptibleFlows(c, intBalC, c.remediationMeanGBPm, 1);
+  const opBalC = runOperatorBalance(c, shapes, 1, 1);
+  const opDrawsC: OpDraws = {
+    premium: c.opTimeToPowerPremium,
+    capacityRateKwMo: c.opBaseCapacityRateKwMo,
+    relief: c.opDecomReliefRate,
+    defaultYear: null,
+  };
+  const opC = operatorFlows(c, opBalC, opDrawsC, c.remediationMeanGBPm, 1);
+  const decomNetNpv = npv(c.discountRate, decomNetFlows(c, c.opDecomReliefRate));
 
   const compNpvs: number[] = [];
   const h2Npvs: number[] = [];
   const intNpvs: number[] = [];
+  const opNpvs: number[] = [];
   for (let r = 0; r < runs; r++) {
     const priceMult = Math.exp(0.18 * randn() - 0.0162);
     const windMult = 1 + 0.06 * randn();
@@ -459,10 +671,24 @@ export function runFeasibility(c: ConceptInputs, shapes: YearShapes, runs = 200,
     compNpvs.push(npv(c.discountRate, computeFlows(c, bal, remediation)));
     h2Npvs.push(npv(c.discountRate, h2Flows(c, shapes, windMult, remediation, h2Price).flows));
     intNpvs.push(npv(c.discountRate, interruptibleFlows(c, runInterruptibleBalance(c, shapes, windMult), remediation, rateMult)));
+    // Option E draws come AFTER the shared ones so A-D paths are bit-identical.
+    const opDraws: OpDraws = {
+      premium: triangular(rng(), 0.1, 0.35, 0.7),
+      capacityRateKwMo: c.opBaseCapacityRateKwMo * (1 + 0.15 * randn()),
+      relief: 0.45 + 0.2 * rng(),
+      defaultYear:
+        rng() < c.opAnchorDefaultProb && c.opContractYears > 0
+          ? 1 + Math.floor(rng() * c.opContractYears)
+          : null,
+    };
+    opNpvs.push(
+      npv(c.discountRate, operatorFlows(c, runOperatorBalance(c, shapes, priceMult, windMult), opDraws, remediation, rateMult)),
+    );
   }
   compNpvs.sort((a, b) => a - b);
   h2Npvs.sort((a, b) => a - b);
   intNpvs.sort((a, b) => a - b);
+  opNpvs.sort((a, b) => a - b);
 
   // Break-even lease: bisect the lease rate at which compute NPV = decom NPV.
   let lo = 0;
@@ -486,6 +712,41 @@ export function runFeasibility(c: ConceptInputs, shapes: YearShapes, runs = 200,
     if (v < decomNpv) rlo = mid;
     else rhi = mid;
   }
+
+  // Break-even anchor capacity rate (£/kW-IT/month) vs NET decom-now.
+  let klo = 0;
+  let khi = 600;
+  for (let i = 0; i < 40; i++) {
+    const mid = (klo + khi) / 2;
+    const v = npv(c.discountRate, operatorFlows(c, opBalC, { ...opDrawsC, capacityRateKwMo: mid }, c.remediationMeanGBPm, 1));
+    if (v < decomNetNpv) klo = mid;
+    else khi = mid;
+  }
+
+  // Operator breakeven relief: the relief rate at which E ≥ net decom-now
+  // (both sides depend on relief). Null when unbracketed in [0,1].
+  const gRelief = (rel: number) =>
+    npv(c.discountRate, operatorFlows(c, opBalC, { ...opDrawsC, relief: rel }, c.remediationMeanGBPm, 1)) -
+    npv(c.discountRate, decomNetFlows(c, rel));
+  let opBreakevenRelief: number | null = null;
+  if (gRelief(0) * gRelief(1) <= 0) {
+    let a = 0;
+    let b = 1;
+    for (let i = 0; i < 40; i++) {
+      const mid = (a + b) / 2;
+      if (gRelief(a) * gRelief(mid) <= 0) b = mid;
+      else a = mid;
+    }
+    opBreakevenRelief = (a + b) / 2;
+  }
+
+  // Tenant ledger: effective all-in £/kW-IT/month in year 1 (capacity bill +
+  // energy passthrough at cost×(1+margin) + refresh recharge at cost×1.15).
+  const energyCostC = (opBalC.windConsumedMWh * c.opStrikeGBP + opBalC.importCostGBP) / 1e6;
+  const rechargeC = (c.opRefreshRechargeGBPmPer100MW * c.computeMW) / 100;
+  const tenantEffectiveKwMo =
+    ((anchorYearRevenueGBP(c, opBalC, opDrawsC) / 1e6 + energyCostC * (1 + c.opEnergyMargin) + rechargeC * 1.15) * 1e6) /
+    (c.computeMW * 1000 * 12);
 
   const yr1 = (flows: number[]) => flows[2] ?? 0;
   return {
@@ -517,6 +778,24 @@ export function runFeasibility(c: ConceptInputs, shapes: YearShapes, runs = 200,
       costGBPmYr: 0,
       annualKt: h2C.kt,
       probBeatsDecom: h2Npvs.filter((v) => v > decomNpv).length / h2Npvs.length,
+    },
+    decomNetNpvGBPm: decomNetNpv,
+    operator: {
+      npvGBPm: npv(c.discountRate, opC),
+      npvP10GBPm: quantileSorted(opNpvs, 0.1),
+      npvP90GBPm: quantileSorted(opNpvs, 0.9),
+      capexGBPm: opCapexGBPm(c) + c.remediationMeanGBPm,
+      revenueGBPmYr: anchorYearRevenueGBP(c, opBalC, opDrawsC) / 1e6,
+      costGBPmYr: (c.computeMW * c.intOpexKGBPPerMWyr * 1000) / 1e6,
+      availability: opBalC.availability,
+      probBeatsDecom: opNpvs.filter((v) => v > decomNetNpv).length / opNpvs.length,
+      breakEvenRateKwMo: (klo + khi) / 2,
+      deferralCreditGBPm: c.opDeferralCredit
+        ? c.decomCostGBPm * (1 - c.opDecomReliefRate) * (1 - 1 / Math.pow(1 + c.opOperatorDiscount, c.secondLifeYears))
+        : 0,
+      netDecomGBPm: c.decomCostGBPm * (1 - c.opDecomReliefRate),
+      operatorBreakevenRelief: opBreakevenRelief,
+      tenantEffectiveKwMo,
     },
     interruptible: {
       npvGBPm: npv(c.discountRate, intC),
@@ -555,6 +834,39 @@ const TORNADO_KEYS: Array<{ key: keyof ConceptInputs; label: string }> = [
   { key: "intConversionGBPm", label: "conversion scope" },
   { key: "discountRate", label: "discount rate" },
 ];
+
+// Option E tornado — expected order: time-to-power premium, capacity rate,
+// remediation, tied wind ratio, relief, strike.
+const TORNADO_E_KEYS: Array<{ key: keyof ConceptInputs; label: string }> = [
+  { key: "opTimeToPowerPremium", label: "time-to-power premium" },
+  { key: "opBaseCapacityRateKwMo", label: "base capacity rate" },
+  { key: "remediationMeanGBPm", label: "structural remediation" },
+  { key: "opTiedWindRatio", label: "tied wind ratio" },
+  { key: "opDecomReliefRate", label: "decom tax relief" },
+  { key: "opStrikeGBP", label: "energy strike" },
+  { key: "opAvailabilityFloor", label: "availability floor" },
+  { key: "intOpexKGBPPerMWyr", label: "marine opex" },
+];
+
+export function runTornadoE(c: ConceptInputs, shapes: YearShapes): TornadoRow[] {
+  const draws = (cc: ConceptInputs): OpDraws => ({
+    premium: cc.opTimeToPowerPremium,
+    capacityRateKwMo: cc.opBaseCapacityRateKwMo,
+    relief: cc.opDecomReliefRate,
+    defaultYear: null,
+  });
+  const evalNpv = (cc: ConceptInputs) =>
+    npv(cc.discountRate, operatorFlows(cc, runOperatorBalance(cc, shapes, 1, 1), draws(cc), cc.remediationMeanGBPm, 1));
+  const base = evalNpv(c);
+  return TORNADO_E_KEYS.map(({ key, label }) => ({
+    label,
+    key,
+    lowGBPm: evalNpv({ ...c, [key]: (c[key] as number) * 0.8 }) - base,
+    highGBPm: evalNpv({ ...c, [key]: (c[key] as number) * 1.2 }) - base,
+  })).sort(
+    (a, b) => Math.max(Math.abs(b.lowGBPm), Math.abs(b.highGBPm)) - Math.max(Math.abs(a.lowGBPm), Math.abs(a.highGBPm)),
+  );
+}
 
 export function runTornado(c: ConceptInputs, shapes: YearShapes): TornadoRow[] {
   const base = npv(
