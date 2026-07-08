@@ -190,6 +190,78 @@ export default function Landing() {
         </div>
       </Section>
 
+      <Section title="UNDER THE HOOD — THE MODELLING">
+        <p className="text-[var(--ink-soft)]">
+          The game doubles as a set of real quantitative models. Every technique below runs live in
+          your browser, on real data, with deterministic seeds — the same inputs always reproduce
+          the same numbers, and anything that isn&apos;t live is labelled a reference value.
+        </p>
+        <div className="space-y-3">
+          {[
+            {
+              where: "LAB",
+              name: "Short-horizon price forecast (24–72h)",
+              body: "Transparent regressions fitted to the last 7 days of real 30-minute data: wind generation ~ wind speed cubed, solar ~ irradiance, demand ~ hour-of-day plus heating/cooling degrees, and price ~ thermal utilisation (residual demand over the rolling 48-hour max of coal+gas output — so a tripped unit reprices the curve automatically). Prices are winsorized for the fit so spikes don’t crush least-squares. The fits then run over the live weather forecast to project price, demand and renewables forward.",
+            },
+            {
+              where: "LAB",
+              name: "Monte-Carlo price fan + calibration scoring",
+              body: "240 simulated paths built by block-bootstrapping the model’s own in-sample errors (4-hour blocks preserve spike clustering; raw residuals keep the fat upper tail) around the deterministic forecast, giving P10–P90 bands. Snapshots store the fan, and when reality catches up the scorecard reports the actual hit-rate inside the band against the ~80% nominal — the forecast’s honesty is measured, not asserted.",
+            },
+            {
+              where: "DESK",
+              name: "Structural 12-month spot simulation",
+              body: "For quarterly horizons the game simulates the physics instead of bootstrapping history: every registered coal and gas station is split into unit blocks, and each unit runs a daily Markov chain — forced trips, lognormal repairs, and a small catastrophic tail (months offline, the Callide scenario). Seasonal demand with heatwave shocks and AR(1) renewables paths feed a convex utilisation→price curve calibrated so a median year reproduces the last 90 days’ average. A big unit failure shifts the price regime for the whole repair — a spiky quarter, not a spiky half-hour. Outputs: distributions of quarterly average prices and your retail book’s 12-month margin.",
+            },
+            {
+              where: "BUILD",
+              name: "Merit-order what-if",
+              body: "Adding or closing a plant re-dispatches a stylised merit-order model over the last 7 days of real prices: price impact, generation-mix shift, the new asset’s capture price (including self-cannibalisation for wind and solar), and the flow-through to your retail book.",
+            },
+            {
+              where: "BUILD",
+              name: "Project finance with risk",
+              body: "Developer-grade appraisal per asset: LCOE/LCOS, NPV, IRR and payback, with the WACC default seeded live from the RBA cash rate plus an equity premium and inflation from the CPI. A 600-run Monte Carlo bootstraps annual price levels from observed history and adds a right-skewed capex-overrun draw and a systematic capacity-factor error — giving NPV/IRR distributions, P(NPV>0) and a lifetime capture-price fan. Every assumption is editable and the outputs reflow live.",
+            },
+            {
+              where: "/NORTHSEA",
+              name: "Platform-repurposing feasibility (UK North Sea)",
+              body: "A separate research tool on the same engines: screening end-of-life oil & gas platforms for AI-compute second lives (wind adjacency, fibre-through-pipeline backhaul, topside weight budgets), then appraising decommission-now vs compute vs hydrogen vs an operator-sponsored anchor tenancy on shared Monte-Carlo paths — with live GB market data from Elexon and Bank of England macro.",
+            },
+          ].map((m) => (
+            <div key={m.name} className="rounded-xl border p-4" style={{ borderColor: "var(--edge)" }}>
+              <div className="mb-1 flex items-center gap-2">
+                <span
+                  className="rounded px-1.5 py-0.5 font-[family-name:var(--f-mono)] text-[10px] tracking-widest"
+                  style={{ background: "var(--gen)", color: "#0b0d11" }}
+                >
+                  {m.where}
+                </span>
+                <span className="font-semibold">{m.name}</span>
+              </div>
+              <p className="text-sm text-[var(--ink-soft)]">{m.body}</p>
+            </div>
+          ))}
+        </div>
+        <p className="text-sm text-[var(--ink-soft)]">
+          Shared machinery: seeded Mulberry32 PRNG (reproducible runs), Box–Muller normals,
+          winsorized robust fits, block and annual bootstraps, and a macro pipeline that ingests
+          RBA/ABS (and Bank of England/ONS) series into a normalised store. Known limits, stated
+          plainly: the price formation is a stylised merit-order proxy, not a dispatch engine;
+          short-horizon models assume the recent window is representative; outage rates in the
+          structural simulator are reference values, not unit history.
+        </p>
+        <p>
+          Curious about the North Sea research tool?{" "}
+          <Link href="/northsea" className="underline">
+            Open the feasibility study
+          </Link>
+          .
+        </p>
+      </Section>
+
+      <div className="border-t" style={{ borderColor: "var(--edge)" }} />
+
       <Section title="THE DATA IS REAL">
         <p>
           Generation, demand, prices and interconnector flows come from{" "}
