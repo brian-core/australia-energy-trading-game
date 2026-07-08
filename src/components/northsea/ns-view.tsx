@@ -397,6 +397,7 @@ export default function NsView() {
                 <div className="space-y-0.5">
                   <Row k="type / installed" v={`${sel.platform.type} · ${sel.platform.installedYear}`} />
                   <Row k="cessation of production" v={`${sel.platform.copYear} (${sel.platform.status})`} />
+                  {sel.platform.nstaStatus && <Row k="NSTA registry status" v={sel.platform.nstaStatus} />}
                   <Row k="water depth" v={`${sel.platform.waterDepthM} m`} />
                   <Row k="topside weight budget" v={`${sel.platform.topsideTonnes.toLocaleString()} t${sel.platform.estimated.includes("topsideTonnes") ? " (est)" : ""}`} />
                   <Row
