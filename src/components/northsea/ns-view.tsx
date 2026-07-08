@@ -265,6 +265,79 @@ function buildFleetCsv(results: ScreenResult[]): string {
   return rows.join("\n");
 }
 
+/** Export the OPEN study exactly as configured — every edited assumption,
+ *  the six-option appraisal, both tornados and the ledgers. */
+function buildStudyMd(
+  sel: ScreenResult,
+  rank: number,
+  fleetSize: number,
+  c: ConceptInputs,
+  f: ReturnType<typeof runFeasibility>,
+  tv2: ReturnType<typeof runTornado>,
+  tE: ReturnType<typeof runTornadoE>,
+  macro: UkMacro | null,
+  marketDemo: boolean,
+): string {
+  const p = sel.platform;
+  const date = new Date().toISOString().slice(0, 10);
+  const m = (x: number) => `${x < 0 ? "−" : ""}£${Math.abs(x) >= 1000 ? (Math.abs(x) / 1000).toFixed(2) + "bn" : Math.abs(x).toFixed(0) + "m"}`;
+  const trow = (r: { label: string; lowGBPm: number; highGBPm: number }) =>
+    `| ${r.label} | ${m(r.lowGBPm)} | ${m(r.highGBPm)} |`;
+  return [
+    `# Feasibility Study — ${p.name}`,
+    ``,
+    `Generated ${date} · rank ${rank}/${fleetSize} (score ${Math.round(sel.score)}) · GB market ${marketDemo ? "SYNTHETIC" : "live (Elexon)"} · BoE ${macro?.bankRate.pct.toFixed(2) ?? "ref"}% · CPI ${macro?.cpi.yoyPct.toFixed(1) ?? "ref"}% · discount ${(c.discountRate * 100).toFixed(1)}% · ASSUMPTIONS AS EDITED IN THE TOOL`,
+    ``,
+    `## 1. Site & infrastructure`,
+    ``,
+    `${p.operator} · ${p.field} · ${p.type} · installed ${p.installedYear} · COP ${p.copYear} (${p.status}${p.nstaStatus ? `; NSTA: ${p.nstaStatus}` : ""}) · water ${p.waterDepthM} m · topside ${p.topsideTonnes.toLocaleString()} t${p.estimated.includes("topsideTonnes") ? " (est)" : ""} · nearest wind ${sel.distances.nearestWind ? `${sel.distances.nearestWind.farm.name} ${Math.round(sel.distances.nearestWind.km)} km` : "—"} · pool ≤60 km ${Math.round(sel.distances.windWithin60kmMW).toLocaleString()} MW · fibre ${sel.distances.nearestLanding ? `${sel.distances.nearestLanding.landing.name} ${Math.round(sel.distances.nearestLanding.km)} km` : "—"} · pipeline reuse ${p.pipelineReuse ? "yes" : "NO"}`,
+    ``,
+    `## 2. Concept as configured`,
+    ``,
+    `V2 interruptible: ${c.computeMW} MW IT · PUE ${c.pue} · rate £${c.intRevenueGBPPerMWhIT}/MWh-IT · strike £${c.intStrikeGBP} · min-load ${Math.round(c.intMinLoadShare * 100)}% · onshore node ${Math.round(c.onshoreNodeShare * 100)}% · refresh ${Math.round(c.refreshShare * 100)}%/${c.refreshYears}yr · second life ${c.secondLifeYears} yr`,
+    ``,
+    `Option E: capacity £${c.opBaseCapacityRateKwMo}/kW-mo + ${Math.round(c.opTimeToPowerPremium * 100)}% time-to-power · term ${c.opContractYears} yr · relief ${Math.round(c.opDecomReliefRate * 100)}% (operator rate ${Math.round(c.opOperatorDiscount * 100)}%, deferral credit ${c.opDeferralCredit ? "ON" : "OFF"}) · wind ratio ${c.opTiedWindRatio}× · import ${Math.round(c.opImportShare * 100)}% @ spot+£${c.opWheelingGBP} · strike £${c.opStrikeGBP} · cable share ${Math.round(c.opElecCostShare * 100)}% · floor ${Math.round(c.opAvailabilityFloor * 100)}% · GPU fit-out removed ${Math.round(c.opGpuShareOfFitout * 100)}% · anchor default ${Math.round(c.opAnchorDefaultProb * 100)}%/path`,
+    ``,
+    `## 3. Options appraisal (shared MC paths, ×${f.runs})`,
+    ``,
+    `| Option | Capex | NPV P10 | NPV P50 | NPV P90 | P>decom |`,
+    `|---|---|---|---|---|---|`,
+    `| A · decom now (gross) | ${m(f.decomNow.capexGBPm)} | — | ${m(f.decomNow.npvGBPm)} | — | — |`,
+    `| A′ · decom now, net of ${Math.round(c.opDecomReliefRate * 100)}% relief | ${m(f.operator.netDecomGBPm)} | — | ${m(f.decomNetNpvGBPm)} | — | — |`,
+    `| B · interruptible compute (v2) | ${m(f.interruptible.capexGBPm)} | ${m(f.interruptible.npvP10GBPm)} | ${m(f.interruptible.npvGBPm)} | ${m(f.interruptible.npvP90GBPm)} | ${Math.round(f.interruptible.probBeatsDecom * 100)}% |`,
+    `| C · firm compute + LDES (v1) | ${m(f.compute.capexGBPm)} | ${m(f.compute.npvP10GBPm)} | ${m(f.compute.npvGBPm)} | ${m(f.compute.npvP90GBPm)} | ${Math.round(f.compute.probBeatsDecom * 100)}% |`,
+    `| D · H2 electrolysis | ${m(f.h2.capexGBPm)} | ${m(f.h2.npvP10GBPm)} | ${m(f.h2.npvGBPm)} | ${m(f.h2.npvP90GBPm)} | ${Math.round(f.h2.probBeatsDecom * 100)}% |`,
+    `| E · operator-sponsored anchor | ${m(f.operator.capexGBPm)} | ${m(f.operator.npvP10GBPm)} | ${m(f.operator.npvGBPm)} | ${m(f.operator.npvP90GBPm)} | ${Math.round(f.operator.probBeatsDecom * 100)}%* |`,
+    ``,
+    `\*E vs the NET (A′) baseline. B/C/D vs gross A.`,
+    ``,
+    `## 4. Verdicts & ledgers`,
+    ``,
+    `- B break-even: £${Math.round(f.interruptible.breakEvenRateGBPMWh)}/MWh-IT · effective utilisation ${Math.round(f.interruptible.deliveredShare * 100)}%`,
+    `- E break-even capacity rate: **£${Math.round(f.operator.breakEvenRateKwMo)}/kW-mo** (negotiation floor vs the quoted £${c.opBaseCapacityRateKwMo}) · availability ${Math.round(f.operator.availability * 100)}%`,
+    `- Operator ledger: deferral credit ${m(f.operator.deferralCreditGBPm)} vs conversion exposure ${m(f.operator.capexGBPm)} · breakeven relief ${f.operator.operatorBreakevenRelief == null ? "n/a — clears at any relief rate at these settings" : Math.round(f.operator.operatorBreakevenRelief * 100) + "%"}`,
+    `- Tenant ledger: effective all-in £${Math.round(f.operator.tenantEffectiveKwMo)}/kW-mo now vs onshore reference £${c.opOnshoreRefRateKwMo}/kW-mo (excl energy) available year ${c.opOnshoreQueueYears}`,
+    ``,
+    `## 5. Sensitivity (±20% per input, ΔNPV)`,
+    ``,
+    `### V2 interruptible`,
+    ``,
+    `| Input | −20% | +20% |`,
+    `|---|---|---|`,
+    ...tv2.map(trow),
+    ``,
+    `### Option E`,
+    ``,
+    `| Input | −20% | +20% |`,
+    `|---|---|---|`,
+    ...tE.map(trow),
+    ``,
+    `## 6. Caveats`,
+    ``,
+    `Screening-grade: year shapes tiled from the last 7 days of GB data, seasonally modulated. Structural remediation is a fat-tailed MC draw (mean £${c.remediationMeanGBPm}m), not condition data. Fibre proximity/pipeline reuse screens connectivity; pigging records under operator NDA are the gating item. OSPAR 98/3 presumption of removal applies; removal obligation is preserved and funded at net cost in E, not laundered.`,
+  ].join("\n");
+}
+
 export default function NsView() {
   const [market, setMarket] = useState<GbMarketPayload | null>(null);
   const [macro, setMacro] = useState<UkMacro | null>(null);
@@ -499,9 +572,36 @@ export default function NsView() {
 
           {sel && concept && (
             <>
-              <button onClick={() => setSelectedId(null)} className="text-[10px] tracking-widest text-[var(--ink-soft)] hover:text-[var(--ink)]">
-                ← BACK TO RANKED FLEET
-              </button>
+              <div className="flex items-center justify-between">
+                <button onClick={() => setSelectedId(null)} className="text-[10px] tracking-widest text-[var(--ink-soft)] hover:text-[var(--ink)]">
+                  ← BACK TO RANKED FLEET
+                </button>
+                {feas && tornado && tornadoE && (
+                  <button
+                    onClick={() =>
+                      download(
+                        `study-${sel.platform.id}-${new Date().toISOString().slice(0, 10)}.md`,
+                        buildStudyMd(
+                          sel,
+                          results.findIndex((r) => r.platform.id === sel.platform.id) + 1,
+                          results.length,
+                          concept,
+                          feas,
+                          tornado,
+                          tornadoE,
+                          macro,
+                          !!market?.demo,
+                        ),
+                        "text/markdown",
+                      )
+                    }
+                    className="rounded border px-2 py-0.5 text-[10px] tracking-widest text-[var(--ink)]"
+                    style={{ borderColor: "var(--edge)" }}
+                  >
+                    ⭳ STUDY (.MD)
+                  </button>
+                )}
+              </div>
 
               {/* Executive summary */}
               <div className="rounded-lg border p-3.5" style={{ borderColor: feas && feas.compute.npvGBPm > feas.decomNow.npvGBPm ? "#48a87c" : "var(--edge)" }}>
