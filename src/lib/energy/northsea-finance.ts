@@ -49,6 +49,20 @@ export interface ConceptInputs {
   h2PriceGBPkg: number;
   h2KwhPerKg: number; // ~52.5 kWh/kg PEM incl BoP
   h2CapexGBPmPerMW: number;
+  // Interruptible compute (v2 concept): the workload absorbs wind
+  // variability — checkpoint & power down in lulls. No LDES deck, no HVDC
+  // (33-66kV AC array cable), no take-or-pay: energy is bought only when
+  // consumed, at a curtailment-flavoured strike. Fibre goes home through the
+  // platform's own flooded export pipeline where one survives.
+  intRevenueGBPPerMWhIT: number; // £ per delivered IT-MWh (merchant interruptible AI hosting)
+  intStrikeGBP: number; // £/MWh for energy actually consumed
+  intMinLoadShare: number; // below this share of full load, checkpoint & shut down
+  intComputeCapexGBPmPerMW: number; // lighter spec than Tier-III (redundancy engineered out)
+  intOpexKGBPPerMWyr: number;
+  intConversionGBPm: number; // lighter marine scope than the v1 heavy conversion
+  bessCapexGBPm: number; // 3-4 deck BESS containers: ride-through + hotel load
+  acCableGBPmPerKm: number; // 33-66kV array cable to the adjacent lease
+  fibrePullGBPm: number; // fibre floated/pigged through the retired export line
   // Decom baseline
   decomCostGBPm: number;
   // Macro
@@ -63,12 +77,13 @@ export const WEIGHT_T_PER = {
   electrolyserMW: 150, // PEM stack + BoP module (estimate)
 };
 
-/** Topside tonnage of a concept option. Compute+LDES and H2 are alternative
- *  payloads — each is checked against the weight budget separately. */
-export function conceptWeightTonnes(c: ConceptInputs, option: "compute" | "h2"): number {
-  return option === "compute"
-    ? c.computeMW * WEIGHT_T_PER.computeMW + c.storageGWh * WEIGHT_T_PER.storageGWh
-    : c.h2ElectrolyserMW * WEIGHT_T_PER.electrolyserMW;
+/** Topside tonnage of a concept option — each payload is an alternative,
+ *  checked against the weight budget separately. The interruptible variant
+ *  carries only compute modules + a few BESS containers (~60 t). */
+export function conceptWeightTonnes(c: ConceptInputs, option: "compute" | "h2" | "interruptible"): number {
+  if (option === "compute") return c.computeMW * WEIGHT_T_PER.computeMW + c.storageGWh * WEIGHT_T_PER.storageGWh;
+  if (option === "h2") return c.h2ElectrolyserMW * WEIGHT_T_PER.electrolyserMW;
+  return c.computeMW * WEIGHT_T_PER.computeMW + 60;
 }
 
 /** Sensible starting concept for a platform: sized to its weight budget and
@@ -112,6 +127,15 @@ export function defaultConcept(
     h2PriceGBPkg: 6.08, // Aberdeen/NDC break-even anchor
     h2KwhPerKg: 52.5,
     h2CapexGBPmPerMW: 1.2,
+    intRevenueGBPPerMWhIT: 170,
+    intStrikeGBP: 35,
+    intMinLoadShare: 0.15,
+    intComputeCapexGBPmPerMW: 5,
+    intOpexKGBPPerMWyr: 120,
+    intConversionGBPm: Math.round(decom * 0.35),
+    bessCapexGBPm: 5,
+    acCableGBPmPerKm: 0.8,
+    fibrePullGBPm: 6,
     decomCostGBPm: decom,
     discountRate: macro?.discountRate ?? 0.085,
     inflation: macro?.inflation ?? 0.028,
@@ -212,6 +236,65 @@ function runBalance(c: ConceptInputs, shapes: YearShapes, priceMult: number, win
   return { windGenMWh: windGen, deficitCostGBP: deficitCost, surplusRevenueGBP: surplusRev, servedShare: servedH / 8760 };
 }
 
+// --- Interruptible compute (v2) -------------------------------------------------
+
+interface IntBalance {
+  deliveredITMWh: number;
+  consumedMWh: number;
+  /** Delivered IT energy as a share of nameplate IT energy — the effective
+   *  utilisation the interruptible model achieves on these wind shapes. */
+  deliveredShare: number;
+}
+
+/** Hourly: the cluster modulates to whatever the tied wind can carry; below
+ *  the min-load threshold it checkpoints and powers down (BESS carries hotel
+ *  load — small enough to ignore in the energy balance). No take-or-pay:
+ *  only consumed energy is bought. Surplus wind stays with the farm. */
+function runInterruptibleBalance(c: ConceptInputs, shapes: YearShapes, windMult: number): IntBalance {
+  const loadMax = c.computeMW * c.pue;
+  let delivered = 0;
+  let consumed = 0;
+  for (let h = 0; h < 8760; h++) {
+    const wind = c.tiedWindMW * Math.min(shapes.windCf[h] * windMult, 1);
+    const supply = Math.min(wind, loadMax);
+    if (supply >= loadMax * c.intMinLoadShare) {
+      delivered += supply / c.pue;
+      consumed += supply;
+    }
+  }
+  return {
+    deliveredITMWh: delivered,
+    consumedMWh: consumed,
+    deliveredShare: delivered / (c.computeMW * 8760),
+  };
+}
+
+function intCapexGBPm(c: ConceptInputs): number {
+  const fibre = c.fibrePullGBPm; // own-pipeline pull; UI swaps in subsea lay when no line survives
+  return (
+    c.intConversionGBPm +
+    c.computeMW * c.intComputeCapexGBPmPerMW +
+    c.bessCapexGBPm +
+    c.windDistanceKm * c.acCableGBPmPerKm +
+    fibre
+  );
+}
+
+/** Cashflows (£m/yr) for the interruptible option, one MC draw. */
+function interruptibleFlows(c: ConceptInputs, bal: IntBalance, remediation: number, rateMult: number): number[] {
+  const capex = intCapexGBPm(c) + remediation;
+  const flows: number[] = [-capex / 2, -capex / 2];
+  for (let k = 1; k <= c.secondLifeYears; k++) {
+    const esc = Math.pow(1 + c.inflation, k - 1);
+    const revenue = (bal.deliveredITMWh * c.intRevenueGBPPerMWhIT * rateMult * esc) / 1e6;
+    const power = (bal.consumedMWh * c.intStrikeGBP * esc) / 1e6;
+    const opex = (c.computeMW * c.intOpexKGBPPerMWyr * 1000 * esc) / 1e6;
+    flows.push(revenue - power - opex);
+  }
+  flows.push(-c.decomCostGBPm * Math.pow(1 + c.inflation, c.secondLifeYears + 1));
+  return flows;
+}
+
 // --- Appraisal ----------------------------------------------------------------
 
 export interface OptionAppraisal {
@@ -228,6 +311,13 @@ export interface FeasibilityResult {
   decomNow: OptionAppraisal;
   compute: OptionAppraisal & { servedShare: number; probBeatsDecom: number; breakEvenLeaseKGBP: number };
   h2: OptionAppraisal & { annualKt: number; probBeatsDecom: number };
+  /** The v2 primary: interruptible compute, AC-tied, own-pipeline fibre. */
+  interruptible: OptionAppraisal & {
+    deliveredShare: number;
+    probBeatsDecom: number;
+    /** £/MWh-IT at which the option's NPV equals decom-now. */
+    breakEvenRateGBPMWh: number;
+  };
   runs: number;
 }
 
@@ -323,20 +413,27 @@ export function runFeasibility(c: ConceptInputs, shapes: YearShapes, runs = 200,
   const balC = runBalance(c, shapes, 1, 1);
   const compC = computeFlows(c, balC, c.remediationMeanGBPm);
   const h2C = h2Flows(c, shapes, 1, c.remediationMeanGBPm, c.h2PriceGBPkg);
+  const intBalC = runInterruptibleBalance(c, shapes, 1);
+  const intC = interruptibleFlows(c, intBalC, c.remediationMeanGBPm, 1);
 
   const compNpvs: number[] = [];
   const h2Npvs: number[] = [];
+  const intNpvs: number[] = [];
   for (let r = 0; r < runs; r++) {
     const priceMult = Math.exp(0.18 * randn() - 0.0162);
     const windMult = 1 + 0.06 * randn();
     const remediation = c.remediationMeanGBPm * Math.exp(0.6 * randn() - 0.18);
     const h2Price = c.h2PriceGBPkg * Math.exp(0.2 * randn() - 0.02);
+    // Interruptible revenue is a merchant rate — mild lognormal (σ≈12%).
+    const rateMult = Math.exp(0.12 * randn() - 0.0072);
     const bal = runBalance(c, shapes, priceMult, windMult);
     compNpvs.push(npv(c.discountRate, computeFlows(c, bal, remediation)));
     h2Npvs.push(npv(c.discountRate, h2Flows(c, shapes, windMult, remediation, h2Price).flows));
+    intNpvs.push(npv(c.discountRate, interruptibleFlows(c, runInterruptibleBalance(c, shapes, windMult), remediation, rateMult)));
   }
   compNpvs.sort((a, b) => a - b);
   h2Npvs.sort((a, b) => a - b);
+  intNpvs.sort((a, b) => a - b);
 
   // Break-even lease: bisect the lease rate at which compute NPV = decom NPV.
   let lo = 0;
@@ -346,6 +443,19 @@ export function runFeasibility(c: ConceptInputs, shapes: YearShapes, runs = 200,
     const v = npv(c.discountRate, computeFlows({ ...c, leaseKGBPPerMWyr: mid }, balC, c.remediationMeanGBPm));
     if (v < decomNpv) lo = mid;
     else hi = mid;
+  }
+
+  // Break-even interruptible rate (£/MWh-IT) vs decom-now.
+  let rlo = 0;
+  let rhi = 1200;
+  for (let i = 0; i < 40; i++) {
+    const mid = (rlo + rhi) / 2;
+    const v = npv(
+      c.discountRate,
+      interruptibleFlows({ ...c, intRevenueGBPPerMWhIT: mid }, intBalC, c.remediationMeanGBPm, 1),
+    );
+    if (v < decomNpv) rlo = mid;
+    else rhi = mid;
   }
 
   const yr1 = (flows: number[]) => flows[2] ?? 0;
@@ -379,6 +489,17 @@ export function runFeasibility(c: ConceptInputs, shapes: YearShapes, runs = 200,
       annualKt: h2C.kt,
       probBeatsDecom: h2Npvs.filter((v) => v > decomNpv).length / h2Npvs.length,
     },
+    interruptible: {
+      npvGBPm: npv(c.discountRate, intC),
+      npvP10GBPm: quantileSorted(intNpvs, 0.1),
+      npvP90GBPm: quantileSorted(intNpvs, 0.9),
+      capexGBPm: intCapexGBPm(c) + c.remediationMeanGBPm,
+      revenueGBPmYr: (intBalC.deliveredITMWh * c.intRevenueGBPPerMWhIT) / 1e6,
+      costGBPmYr: (intBalC.consumedMWh * c.intStrikeGBP + c.computeMW * c.intOpexKGBPPerMWyr * 1000) / 1e6,
+      deliveredShare: intBalC.deliveredShare,
+      probBeatsDecom: intNpvs.filter((v) => v > decomNpv).length / intNpvs.length,
+      breakEvenRateGBPMWh: (rlo + rhi) / 2,
+    },
     runs,
   };
 }
@@ -393,22 +514,31 @@ export interface TornadoRow {
   highGBPm: number;
 }
 
+// The tornado runs on the v2 primary (interruptible compute).
 const TORNADO_KEYS: Array<{ key: keyof ConceptInputs; label: string }> = [
-  { key: "leaseKGBPPerMWyr", label: "compute lease rate" },
-  { key: "utilisation", label: "utilisation" },
-  { key: "ppaStrikeGBP", label: "wind PPA strike" },
+  { key: "intRevenueGBPPerMWhIT", label: "compute rate (£/MWh-IT)" },
+  { key: "tiedWindMW", label: "tied wind sizing" },
+  { key: "intStrikeGBP", label: "energy strike" },
   { key: "remediationMeanGBPm", label: "structural remediation" },
-  { key: "computeCapexGBPmPerMW", label: "compute capex" },
-  { key: "opexKGBPPerMWyr", label: "marine opex" },
-  { key: "storageCapexGBPmPerGWh", label: "storage capex" },
+  { key: "intComputeCapexGBPmPerMW", label: "compute capex" },
+  { key: "intOpexKGBPPerMWyr", label: "marine opex" },
+  { key: "intConversionGBPm", label: "conversion scope" },
   { key: "discountRate", label: "discount rate" },
 ];
 
 export function runTornado(c: ConceptInputs, shapes: YearShapes): TornadoRow[] {
-  const base = npv(c.discountRate, computeFlows(c, runBalance(c, shapes, 1, 1), c.remediationMeanGBPm));
+  const base = npv(
+    c.discountRate,
+    interruptibleFlows(c, runInterruptibleBalance(c, shapes, 1), c.remediationMeanGBPm, 1),
+  );
   const evalAt = (k: keyof ConceptInputs, mult: number): number => {
     const cc = { ...c, [k]: (c[k] as number) * mult };
-    return npv(cc.discountRate, computeFlows(cc, runBalance(cc, shapes, 1, 1), cc.remediationMeanGBPm)) - base;
+    return (
+      npv(
+        cc.discountRate,
+        interruptibleFlows(cc, runInterruptibleBalance(cc, shapes, 1), cc.remediationMeanGBPm, 1),
+      ) - base
+    );
   };
   return TORNADO_KEYS.map(({ key, label }) => ({
     label,
