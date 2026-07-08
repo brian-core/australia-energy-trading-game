@@ -49,6 +49,13 @@ const LANDINGS = cablesJson.landings as CableLanding[];
 
 const EQUITY_PREMIUM = 0.04;
 
+/** 500 paths cannot resolve better than ~0.2% — never print a bare "100%". */
+function fmtProb(p: number): string {
+  if (p >= 0.995) return ">99%";
+  if (p <= 0.005 && p > 0) return "<1%";
+  return `${Math.round(p * 100)}%`;
+}
+
 function gbpM(x: number): string {
   const sign = x < 0 ? "−" : "";
   const abs = Math.abs(x);
@@ -196,6 +203,7 @@ function buildCandidateProfiles(
     `Screening-grade appraisal, not engineering data — tonnages/COP flagged (est) are estimates; fibre proximity screens connectivity potential, it does not guarantee dark fibre.`,
     ``,
   ];
+  const pct = (x: number) => (x >= 0.995 ? ">99%" : x <= 0.005 && x > 0 ? "<1%" : `${Math.round(x * 100)}%`);
   results.slice(0, n).forEach((r, i) => {
     const p = r.platform;
     const c = defaultConcept(
@@ -220,10 +228,10 @@ function buildCandidateProfiles(
       `| Option | Capex £m | NPV P10 | NPV P50 | NPV P90 | P>decom |`,
       `|---|---|---|---|---|---|`,
       `| A · decommission now | ${Math.round(f.decomNow.capexGBPm)} | — | ${Math.round(f.decomNow.npvGBPm)} | — | — |`,
-      `| B · interruptible compute (v2) | ${Math.round(f.interruptible.capexGBPm)} | ${Math.round(f.interruptible.npvP10GBPm)} | ${Math.round(f.interruptible.npvGBPm)} | ${Math.round(f.interruptible.npvP90GBPm)} | ${Math.round(f.interruptible.probBeatsDecom * 100)}% |`,
-      `| C · firm compute + LDES (v1) | ${Math.round(f.compute.capexGBPm)} | ${Math.round(f.compute.npvP10GBPm)} | ${Math.round(f.compute.npvGBPm)} | ${Math.round(f.compute.npvP90GBPm)} | ${Math.round(f.compute.probBeatsDecom * 100)}% |`,
-      `| D · H2 electrolysis | ${Math.round(f.h2.capexGBPm)} | ${Math.round(f.h2.npvP10GBPm)} | ${Math.round(f.h2.npvGBPm)} | ${Math.round(f.h2.npvP90GBPm)} | ${Math.round(f.h2.probBeatsDecom * 100)}% |`,
-      `| E · operator-sponsored anchor | ${Math.round(f.operator.capexGBPm)} | ${Math.round(f.operator.npvP10GBPm)} | ${Math.round(f.operator.npvGBPm)} | ${Math.round(f.operator.npvP90GBPm)} | ${Math.round(f.operator.probBeatsDecom * 100)}%* |`,
+      `| B · interruptible compute (v2) | ${Math.round(f.interruptible.capexGBPm)} | ${Math.round(f.interruptible.npvP10GBPm)} | ${Math.round(f.interruptible.npvGBPm)} | ${Math.round(f.interruptible.npvP90GBPm)} | ${pct(f.interruptible.probBeatsDecom)} |`,
+      `| C · firm compute + LDES (v1) | ${Math.round(f.compute.capexGBPm)} | ${Math.round(f.compute.npvP10GBPm)} | ${Math.round(f.compute.npvGBPm)} | ${Math.round(f.compute.npvP90GBPm)} | ${pct(f.compute.probBeatsDecom)} |`,
+      `| D · H2 electrolysis | ${Math.round(f.h2.capexGBPm)} | ${Math.round(f.h2.npvP10GBPm)} | ${Math.round(f.h2.npvGBPm)} | ${Math.round(f.h2.npvP90GBPm)} | ${pct(f.h2.probBeatsDecom)} |`,
+      `| E · operator-sponsored anchor | ${Math.round(f.operator.capexGBPm)} | ${Math.round(f.operator.npvP10GBPm)} | ${Math.round(f.operator.npvGBPm)} | ${Math.round(f.operator.npvP90GBPm)} | ${pct(f.operator.probBeatsDecom)}* |`,
       ``,
       `\*E judged vs decom NET of ${Math.round(c.opDecomReliefRate * 100)}% relief (${Math.round(f.decomNetNpvGBPm)} £m). E terms: £${c.opBaseCapacityRateKwMo}/kW-mo +${Math.round(c.opTimeToPowerPremium * 100)}% time-to-power, ${c.opContractYears}-yr anchor, wind ratio ${c.opTiedWindRatio}×, import ${Math.round(c.opImportShare * 100)}%, availability ${Math.round(f.operator.availability * 100)}%. Operator ledger: deferral credit £${Math.round(f.operator.deferralCreditGBPm)}m, breakeven relief ${f.operator.operatorBreakevenRelief == null ? "n/a" : Math.round(f.operator.operatorBreakevenRelief * 100) + "%"}. Tenant ledger: effective £${Math.round(f.operator.tenantEffectiveKwMo)}/kW-mo vs onshore £${c.opOnshoreRefRateKwMo} at year ${c.opOnshoreQueueYears}.`,
       ``,
@@ -281,12 +289,15 @@ function buildStudyMd(
   const p = sel.platform;
   const date = new Date().toISOString().slice(0, 10);
   const m = (x: number) => `${x < 0 ? "−" : ""}£${Math.abs(x) >= 1000 ? (Math.abs(x) / 1000).toFixed(2) + "bn" : Math.abs(x).toFixed(0) + "m"}`;
+  const pct = (x: number) => (x >= 0.995 ? ">99%" : x <= 0.005 && x > 0 ? "<1%" : `${Math.round(x * 100)}%`);
   const trow = (r: { label: string; lowGBPm: number; highGBPm: number }) =>
     `| ${r.label} | ${m(r.lowGBPm)} | ${m(r.highGBPm)} |`;
   return [
     `# Feasibility Study — ${p.name}`,
     ``,
     `Generated ${date} · rank ${rank}/${fleetSize} (score ${Math.round(sel.score)}) · GB market ${marketDemo ? "SYNTHETIC" : "live (Elexon)"} · BoE ${macro?.bankRate.pct.toFixed(2) ?? "ref"}% · CPI ${macro?.cpi.yoyPct.toFixed(1) ?? "ref"}% · discount ${(c.discountRate * 100).toFixed(1)}% · ASSUMPTIONS AS EDITED IN THE TOOL`,
+    ``,
+    `Round 2: tenant-indifferent pricing (all-in ≤£100/kW-mo), live SLA floor at ${Math.round(c.opAvailabilityFloor * 100)}% with ${c.opSlaAbatementMult}× abatement, marine opex at Natick-honest levels, P10-led reporting. Residual uncertainty now concentrates in three externally answerable numbers: the rate a real tenant signs at ~75% availability, an O&M contractor's marine opex quote, and the operator's structural condition data.`,
     ``,
     `## 1. Site & infrastructure`,
     ``,
@@ -304,10 +315,10 @@ function buildStudyMd(
     `|---|---|---|---|---|---|`,
     `| A · decom now (gross) | ${m(f.decomNow.capexGBPm)} | — | ${m(f.decomNow.npvGBPm)} | — | — |`,
     `| A′ · decom now, net of ${Math.round(c.opDecomReliefRate * 100)}% relief | ${m(f.operator.netDecomGBPm)} | — | ${m(f.decomNetNpvGBPm)} | — | — |`,
-    `| B · interruptible compute (v2) | ${m(f.interruptible.capexGBPm)} | ${m(f.interruptible.npvP10GBPm)} | ${m(f.interruptible.npvGBPm)} | ${m(f.interruptible.npvP90GBPm)} | ${Math.round(f.interruptible.probBeatsDecom * 100)}% |`,
-    `| C · firm compute + LDES (v1) | ${m(f.compute.capexGBPm)} | ${m(f.compute.npvP10GBPm)} | ${m(f.compute.npvGBPm)} | ${m(f.compute.npvP90GBPm)} | ${Math.round(f.compute.probBeatsDecom * 100)}% |`,
-    `| D · H2 electrolysis | ${m(f.h2.capexGBPm)} | ${m(f.h2.npvP10GBPm)} | ${m(f.h2.npvGBPm)} | ${m(f.h2.npvP90GBPm)} | ${Math.round(f.h2.probBeatsDecom * 100)}% |`,
-    `| E · operator-sponsored anchor | ${m(f.operator.capexGBPm)} | ${m(f.operator.npvP10GBPm)} | ${m(f.operator.npvGBPm)} | ${m(f.operator.npvP90GBPm)} | ${Math.round(f.operator.probBeatsDecom * 100)}%* |`,
+    `| B · interruptible compute (v2) | ${m(f.interruptible.capexGBPm)} | ${m(f.interruptible.npvP10GBPm)} | ${m(f.interruptible.npvGBPm)} | ${m(f.interruptible.npvP90GBPm)} | ${pct(f.interruptible.probBeatsDecom)} |`,
+    `| C · firm compute + LDES (v1) | ${m(f.compute.capexGBPm)} | ${m(f.compute.npvP10GBPm)} | ${m(f.compute.npvGBPm)} | ${m(f.compute.npvP90GBPm)} | ${pct(f.compute.probBeatsDecom)} |`,
+    `| D · H2 electrolysis | ${m(f.h2.capexGBPm)} | ${m(f.h2.npvP10GBPm)} | ${m(f.h2.npvGBPm)} | ${m(f.h2.npvP90GBPm)} | ${pct(f.h2.probBeatsDecom)} |`,
+    `| E · operator-sponsored anchor | ${m(f.operator.capexGBPm)} | ${m(f.operator.npvP10GBPm)} | ${m(f.operator.npvGBPm)} | ${m(f.operator.npvP90GBPm)} | ${pct(f.operator.probBeatsDecom)}* |`,
     ``,
     `\*E vs the NET (A′) baseline. B/C/D vs gross A.`,
     ``,
@@ -315,8 +326,9 @@ function buildStudyMd(
     ``,
     `- B break-even: £${Math.round(f.interruptible.breakEvenRateGBPMWh)}/MWh-IT · effective utilisation ${Math.round(f.interruptible.deliveredShare * 100)}%`,
     `- E break-even capacity rate: **£${Math.round(f.operator.breakEvenRateKwMo)}/kW-mo** (negotiation floor vs the quoted £${c.opBaseCapacityRateKwMo}) · availability ${Math.round(f.operator.availability * 100)}%`,
+    `- **E headline (P10-led): P10 ${m(f.operator.npvP10GBPm)} · P50 ${m(f.operator.npvGBPm)} vs net decom ${m(f.decomNetNpvGBPm)}** · P(beats) ${pct(f.operator.probBeatsDecom)} at ${f.runs}-path resolution — tail risks (remediation, anchor default) present but not P10-binding at these settings`,
     `- Operator ledger: deferral credit ${m(f.operator.deferralCreditGBPm)} vs conversion exposure ${m(f.operator.capexGBPm)} · breakeven relief ${f.operator.operatorBreakevenRelief == null ? "n/a — clears at any relief rate at these settings" : Math.round(f.operator.operatorBreakevenRelief * 100) + "%"}`,
-    `- Tenant ledger: effective all-in £${Math.round(f.operator.tenantEffectiveKwMo)}/kW-mo now vs onshore reference £${c.opOnshoreRefRateKwMo}/kW-mo (excl energy) available year ${c.opOnshoreQueueYears}`,
+    `- Tenant ledger: effective all-in £${Math.round(f.operator.tenantEffectiveKwMo)}/kW-mo (= £${Math.round(f.operator.tenantPerUsableKwMo)} per usable kW at ${Math.round(f.operator.availability * 100)}% availability) vs onshore £${c.opOnshoreRefRateKwMo}/kW-mo firm at year ${c.opOnshoreQueueYears}`,
     ``,
     `## 5. Sensitivity (±20% per input, ΔNPV)`,
     ``,
@@ -620,8 +632,13 @@ export default function NsView() {
                         {gbpM(feas.interruptible.npvGBPm)}
                       </span>{" "}
                       vs decom-now {gbpM(feas.decomNow.npvGBPm)} · P(beats decom){" "}
-                      {Math.round(feas.interruptible.probBeatsDecom * 100)}% · effective utilisation{" "}
+                      {fmtProb(feas.interruptible.probBeatsDecom)} · effective utilisation{" "}
                       {Math.round(feas.interruptible.deliveredShare * 100)}%
+                    </div>
+                    <div>
+                      operator-sponsored (E): <b>P10 {gbpM(feas.operator.npvP10GBPm)}</b> · P50{" "}
+                      {gbpM(feas.operator.npvGBPm)} vs net decom {gbpM(feas.decomNetNpvGBPm)} · P(beats){" "}
+                      {fmtProb(feas.operator.probBeatsDecom)}
                     </div>
                     <div className="text-[var(--ink-soft)]">
                       break-even rate £{Math.round(feas.interruptible.breakEvenRateGBPMWh)}/MWh-IT — the compute
@@ -731,6 +748,7 @@ export default function NsView() {
                     <NumField label="CABLE SHARE" value={Math.round(concept.opElecCostShare * 100)} step={10} suffix="% to SPV" onChange={(v) => set("opElecCostShare")(v / 100)} />
                     <NumField label="CONTRACT TERM" value={concept.opContractYears} step={5} suffix="yr" onChange={set("opContractYears")} />
                     <NumField label="AVAIL FLOOR (SLA)" value={Math.round(concept.opAvailabilityFloor * 100)} step={1} suffix="%" onChange={(v) => set("opAvailabilityFloor")(v / 100)} />
+                    <NumField label="SLA ABATE" value={concept.opSlaAbatementMult} step={0.25} suffix="× shortfall" onChange={set("opSlaAbatementMult")} />
                     <label className="flex flex-col gap-0.5">
                       <span className="text-[10px] tracking-wider text-[var(--ink-soft)]">BILLING BASIS</span>
                       <button
@@ -816,7 +834,7 @@ export default function NsView() {
                           {gbpM(feas.interruptible.npvGBPm)}
                         </td>
                         <td className="text-right">{gbpM(feas.interruptible.npvP90GBPm)}</td>
-                        <td className="text-right">{Math.round(feas.interruptible.probBeatsDecom * 100)}%</td>
+                        <td className="text-right">{fmtProb(feas.interruptible.probBeatsDecom)}</td>
                       </tr>
                       <tr>
                         <td className="py-0.5">C · firm compute + LDES (v1 · critique: no-go)</td>
@@ -826,7 +844,7 @@ export default function NsView() {
                           {gbpM(feas.compute.npvGBPm)}
                         </td>
                         <td className="text-right">{gbpM(feas.compute.npvP90GBPm)}</td>
-                        <td className="text-right">{Math.round(feas.compute.probBeatsDecom * 100)}%</td>
+                        <td className="text-right">{fmtProb(feas.compute.probBeatsDecom)}</td>
                       </tr>
                       <tr>
                         <td className="py-0.5">E · operator-sponsored anchor</td>
@@ -836,7 +854,7 @@ export default function NsView() {
                           {gbpM(feas.operator.npvGBPm)}
                         </td>
                         <td className="text-right">{gbpM(feas.operator.npvP90GBPm)}</td>
-                        <td className="text-right">{Math.round(feas.operator.probBeatsDecom * 100)}%*</td>
+                        <td className="text-right">{fmtProb(feas.operator.probBeatsDecom)}*</td>
                       </tr>
                       <tr>
                         <td className="py-0.5">D · H2 electrolysis</td>
@@ -846,7 +864,7 @@ export default function NsView() {
                           {gbpM(feas.h2.npvGBPm)}
                         </td>
                         <td className="text-right">{gbpM(feas.h2.npvP90GBPm)}</td>
-                        <td className="text-right">{Math.round(feas.h2.probBeatsDecom * 100)}%</td>
+                        <td className="text-right">{fmtProb(feas.h2.probBeatsDecom)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -881,9 +899,15 @@ export default function NsView() {
                       · break-even capacity rate £{Math.round(feas.operator.breakEvenRateKwMo)}/kW-mo
                     </div>
                     <div>
-                      E tenant&apos;s ledger: effective all-in £{Math.round(feas.operator.tenantEffectiveKwMo)}/kW-mo now
-                      vs reference onshore £{concept.opOnshoreRefRateKwMo}/kW-mo (excl energy) available year{" "}
-                      {concept.opOnshoreQueueYears} — the sale happens only if the premium beats the queue
+                      E tenant&apos;s ledger: effective all-in £{Math.round(feas.operator.tenantEffectiveKwMo)}/kW-mo
+                      (= £{Math.round(feas.operator.tenantPerUsableKwMo)} per USABLE kW at{" "}
+                      {Math.round(feas.operator.availability * 100)}% availability) vs onshore £
+                      {concept.opOnshoreRefRateKwMo}/kW-mo firm at year {concept.opOnshoreQueueYears} — the sale
+                      happens only if the premium beats the queue
+                    </div>
+                    <div>
+                      probabilities at {feas.runs}-path resolution; tail risks (remediation, anchor default) are
+                      present but not P10-binding at these settings
                     </div>
                   </div>
                 </Section>
@@ -933,7 +957,8 @@ export default function NsView() {
                 <div className="mt-1.5 text-[9px] leading-snug text-[var(--ink-soft)]">
                   discount default = BoE Bank Rate {macro?.bankRate.live ? `${macro.bankRate.pct.toFixed(2)}%` : "(ref)"} + 4%
                   premium · inflation = ONS CPI {macro ? `${macro.cpi.yoyPct.toFixed(1)}%` : ""} · unit costs are
-                  reference values — every figure editable, the study reflows live.
+                  reference values — every figure editable, the study reflows live. marine opex: REFERENCE —
+                  pending O&amp;M contractor quote; the Natick-sensitive line.
                 </div>
               </Section>
             </>
