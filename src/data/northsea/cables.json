@@ -1,0 +1,17 @@
+{
+  "note": "Subsea fibre landing points relevant to North Sea platform screening, curated from public submarine-cable references (TeleGeography public map, operator announcements). Proximity to a landing is a SCREEN for connectivity potential, not a guarantee of available dark fibre — flagged as such in the UI. The Tampnet offshore fibre network (serving North Sea O&G platforms directly) is listed as offshore nodes; it is the single most thesis-relevant system.",
+  "asOf": "2026-07",
+  "landings": [
+    { "id": "aberdeen", "name": "Aberdeen (Tampnet backhaul)", "lat": 57.15, "lng": -2.08, "cables": ["Tampnet North Sea network"] },
+    { "id": "peterhead", "name": "Peterhead", "lat": 57.5, "lng": -1.78, "cables": ["Tampnet spur", "SHEFA-2 (nearby Banff segment)"] },
+    { "id": "newcastle", "name": "Newcastle / Seaham", "lat": 54.92, "lng": -1.38, "cables": ["NO-UK (Stavanger–Newcastle)"] },
+    { "id": "redcar", "name": "Redcar / Teesside", "lat": 54.62, "lng": -1.07, "cables": ["North Sea Connect (planned)"] },
+    { "id": "lowestoft", "name": "Lowestoft", "lat": 52.48, "lng": 1.75, "cables": ["UK–Netherlands systems"] },
+    { "id": "winterton", "name": "Winterton-on-Sea", "lat": 52.72, "lng": 1.69, "cables": ["Farland North", "legacy TAT corridor"] },
+    { "id": "zandvoort", "name": "Zandvoort (NL)", "lat": 52.37, "lng": 4.53, "cables": ["CIRCE North", "UK–NL systems"] },
+    { "id": "esbjerg", "name": "Esbjerg (DK)", "lat": 55.47, "lng": 8.45, "cables": ["Havfrue/AEC-2", "Havsil"] },
+    { "id": "stavanger", "name": "Stavanger (NO)", "lat": 58.97, "lng": 5.73, "cables": ["NO-UK", "Tampnet backbone"] },
+    { "id": "tampnet-ekofisk", "name": "Tampnet node — Ekofisk hub", "lat": 56.55, "lng": 3.21, "cables": ["Tampnet offshore backbone (existing O&G platform fibre)"] },
+    { "id": "tampnet-forties", "name": "Tampnet node — central UKCS", "lat": 57.7, "lng": 1.0, "cables": ["Tampnet offshore backbone (existing O&G platform fibre)"] }
+  ]
+}

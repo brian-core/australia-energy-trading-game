@@ -1,0 +1,29 @@
+{
+  "note": "UK North Sea offshore wind farms and zones relevant to platform-repurposing screening. Coordinates are approximate array centroids (basin-scale screening, not navigation). capacityMW is nameplate; status as of mid-2026. Sources: The Crown Estate / Crown Estate Scotland leasing rounds, developer announcements, 4C Offshore public data.",
+  "asOf": "2026-07",
+  "farms": [
+    { "id": "hornsea1", "name": "Hornsea One", "lat": 53.88, "lng": 1.79, "capacityMW": 1218, "status": "operational", "type": "fixed" },
+    { "id": "hornsea2", "name": "Hornsea Two", "lat": 53.93, "lng": 1.93, "capacityMW": 1386, "status": "operational", "type": "fixed" },
+    { "id": "hornsea3", "name": "Hornsea Three", "lat": 53.9, "lng": 2.4, "capacityMW": 2852, "status": "construction", "type": "fixed" },
+    { "id": "doggerbank-a", "name": "Dogger Bank A", "lat": 54.75, "lng": 2.0, "capacityMW": 1200, "status": "operational", "type": "fixed" },
+    { "id": "doggerbank-b", "name": "Dogger Bank B", "lat": 54.8, "lng": 2.2, "capacityMW": 1200, "status": "commissioning", "type": "fixed" },
+    { "id": "doggerbank-c", "name": "Dogger Bank C", "lat": 54.9, "lng": 2.6, "capacityMW": 1200, "status": "construction", "type": "fixed" },
+    { "id": "sofia", "name": "Sofia", "lat": 54.5, "lng": 2.5, "capacityMW": 1400, "status": "commissioning", "type": "fixed" },
+    { "id": "seagreen", "name": "Seagreen", "lat": 56.6, "lng": -1.9, "capacityMW": 1075, "status": "operational", "type": "fixed" },
+    { "id": "nng", "name": "Neart na Gaoithe", "lat": 56.27, "lng": -2.2, "capacityMW": 448, "status": "operational", "type": "fixed" },
+    { "id": "moray-east", "name": "Moray East", "lat": 58.1, "lng": -2.7, "capacityMW": 950, "status": "operational", "type": "fixed" },
+    { "id": "moray-west", "name": "Moray West", "lat": 58.2, "lng": -3.1, "capacityMW": 882, "status": "operational", "type": "fixed" },
+    { "id": "beatrice", "name": "Beatrice", "lat": 58.25, "lng": -2.9, "capacityMW": 588, "status": "operational", "type": "fixed" },
+    { "id": "triton-knoll", "name": "Triton Knoll", "lat": 53.5, "lng": 0.8, "capacityMW": 857, "status": "operational", "type": "fixed" },
+    { "id": "race-bank", "name": "Race Bank", "lat": 53.27, "lng": 0.84, "capacityMW": 573, "status": "operational", "type": "fixed" },
+    { "id": "westermost-rough", "name": "Westermost Rough", "lat": 53.8, "lng": 0.15, "capacityMW": 210, "status": "operational", "type": "fixed" },
+    { "id": "east-anglia-1", "name": "East Anglia ONE", "lat": 52.23, "lng": 2.48, "capacityMW": 714, "status": "operational", "type": "fixed" },
+    { "id": "east-anglia-3", "name": "East Anglia THREE", "lat": 52.7, "lng": 2.8, "capacityMW": 1400, "status": "commissioning", "type": "fixed" },
+    { "id": "norfolk-vanguard", "name": "Norfolk Vanguard", "lat": 52.8, "lng": 2.6, "capacityMW": 1800, "status": "consented", "type": "fixed" },
+    { "id": "norfolk-boreas", "name": "Norfolk Boreas", "lat": 52.9, "lng": 2.9, "capacityMW": 1800, "status": "consented", "type": "fixed" },
+    { "id": "berwick-bank", "name": "Berwick Bank", "lat": 56.2, "lng": -1.8, "capacityMW": 4100, "status": "consented", "type": "fixed" },
+    { "id": "ossian", "name": "Ossian (ScotWind E1)", "lat": 56.9, "lng": 0.9, "capacityMW": 3600, "status": "zone", "type": "floating" },
+    { "id": "green-volt", "name": "Green Volt (INTOG)", "lat": 57.4, "lng": 1.4, "capacityMW": 560, "status": "consented", "type": "floating", "note": "INTOG project explicitly intended to power O&G platforms — directly on-thesis" },
+    { "id": "cenos", "name": "Cenos (INTOG)", "lat": 57.1, "lng": 1.1, "capacityMW": 1350, "status": "development", "type": "floating", "note": "INTOG platform-electrification project" }
+  ]
+}
