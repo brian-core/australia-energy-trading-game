@@ -63,6 +63,18 @@ export interface ConceptInputs {
   bessCapexGBPm: number; // 3-4 deck BESS containers: ride-through + hotel load
   acCableGBPmPerKm: number; // 33-66kV array cable to the adjacent lease
   fibrePullGBPm: number; // fibre floated/pigged through the retired export line
+  // Onshore orchestration node at the pipeline landfall: control plane,
+  // checkpoint mirror, SLA front door. Hard sizing discipline — single-digit
+  // % of offshore capacity, distribution-level grid connection.
+  onshoreNodeShare: number; // fraction of offshore IT capacity (default 5%)
+  onshoreCapexGBPmPerMW: number;
+  // GPU hardware refresh: a 3-5yr cycle is a recurring MARINE campaign — the
+  // structural cost mismatch no other repurposing payload faces.
+  refreshYears: number;
+  /** Share of compute capex re-spent per refresh. Default prices the marine
+   *  swap campaign + host-side infra only (customer owns the GPUs at a
+   *  hosting rate); raise toward 0.35+ if the host owns the hardware. */
+  refreshShare: number;
   // Decom baseline
   decomCostGBPm: number;
   // Macro
@@ -136,6 +148,10 @@ export function defaultConcept(
     bessCapexGBPm: 5,
     acCableGBPmPerKm: 0.8,
     fibrePullGBPm: 6,
+    onshoreNodeShare: 0.05,
+    onshoreCapexGBPmPerMW: 4,
+    refreshYears: 4,
+    refreshShare: 0.15,
     decomCostGBPm: decom,
     discountRate: macro?.discountRate ?? 0.085,
     inflation: macro?.inflation ?? 0.028,
@@ -276,7 +292,10 @@ function intCapexGBPm(c: ConceptInputs): number {
     c.computeMW * c.intComputeCapexGBPmPerMW +
     c.bessCapexGBPm +
     c.windDistanceKm * c.acCableGBPmPerKm +
-    fibre
+    fibre +
+    // Onshore orchestration node at the landfall (control plane, checkpoint
+    // mirror, SLA front door) — deliberately small.
+    c.computeMW * c.onshoreNodeShare * c.onshoreCapexGBPmPerMW
   );
 }
 
@@ -289,7 +308,13 @@ function interruptibleFlows(c: ConceptInputs, bal: IntBalance, remediation: numb
     const revenue = (bal.deliveredITMWh * c.intRevenueGBPPerMWhIT * rateMult * esc) / 1e6;
     const power = (bal.consumedMWh * c.intStrikeGBP * esc) / 1e6;
     const opex = (c.computeMW * c.intOpexKGBPPerMWyr * 1000 * esc) / 1e6;
-    flows.push(revenue - power - opex);
+    // GPU refresh: recurring marine campaign every refreshYears (skip the
+    // final cycle — no point refreshing into decommissioning).
+    const refresh =
+      c.refreshYears > 0 && k % c.refreshYears === 0 && k <= c.secondLifeYears - 2
+        ? c.computeMW * c.intComputeCapexGBPmPerMW * c.refreshShare * esc
+        : 0;
+    flows.push(revenue - power - opex - refresh);
   }
   flows.push(-c.decomCostGBPm * Math.pow(1 + c.inflation, c.secondLifeYears + 1));
   return flows;
@@ -364,7 +389,11 @@ function computeFlows(c: ConceptInputs, bal: BalanceResult, remediation: number)
     const revenue = (c.computeMW * c.utilisation * c.leaseKGBPPerMWyr * 1000 * esc + bal.surplusRevenueGBP * esc) / 1e6;
     const power = (bal.windGenMWh * c.ppaStrikeGBP * esc + bal.deficitCostGBP * esc) / 1e6;
     const opex = (c.computeMW * c.opexKGBPPerMWyr * 1000 * esc) / 1e6;
-    flows.push(revenue - power - opex);
+    const refresh =
+      c.refreshYears > 0 && k % c.refreshYears === 0 && k <= c.secondLifeYears - 2
+        ? c.computeMW * c.computeCapexGBPmPerMW * c.refreshShare * esc
+        : 0;
+    flows.push(revenue - power - opex - refresh);
   }
   // Deferred decom at end of second life.
   flows.push(-c.decomCostGBPm * Math.pow(1 + c.inflation, c.secondLifeYears + 1));
@@ -522,6 +551,7 @@ const TORNADO_KEYS: Array<{ key: keyof ConceptInputs; label: string }> = [
   { key: "remediationMeanGBPm", label: "structural remediation" },
   { key: "intComputeCapexGBPmPerMW", label: "compute capex" },
   { key: "intOpexKGBPPerMWyr", label: "marine opex" },
+  { key: "refreshShare", label: "GPU refresh (marine campaign)" },
   { key: "intConversionGBPm", label: "conversion scope" },
   { key: "discountRate", label: "discount rate" },
 ];

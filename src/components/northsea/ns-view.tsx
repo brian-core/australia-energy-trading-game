@@ -461,6 +461,15 @@ export default function NsView() {
                     <NumField label="AC CABLE" value={concept.acCableGBPmPerKm} step={0.1} suffix="£m/km" onChange={set("acCableGBPmPerKm")} />
                     <NumField label="BESS (3-4 CTNRS)" value={concept.bessCapexGBPm} step={1} suffix="£m" onChange={set("bessCapexGBPm")} />
                     <NumField label="FIBRE VIA PIPE" value={concept.fibrePullGBPm} step={1} suffix="£m" onChange={set("fibrePullGBPm")} />
+                    <NumField label="ONSHORE NODE" value={Math.round(concept.onshoreNodeShare * 100)} step={1} suffix="% of IT" onChange={(v) => set("onshoreNodeShare")(v / 100)} />
+                    <NumField label="GPU REFRESH" value={concept.refreshYears} step={1} suffix="yr cycle" onChange={set("refreshYears")} />
+                    <NumField label="REFRESH COST" value={Math.round(concept.refreshShare * 100)} step={5} suffix="% of capex" onChange={(v) => set("refreshShare")(v / 100)} />
+                  </div>
+                  <div className="mt-1 text-[9px] leading-snug text-[var(--ink-soft)]">
+                    onshore node at the pipeline landfall: control plane, checkpoint mirror, SLA front door —
+                    sized single-digit % so it never becomes the data centre this concept exists to avoid. GPU
+                    refresh is a recurring marine campaign (the cost mismatch no other payload faces) — priced
+                    into both compute options.
                   </div>
                   {!sel.platform.pipelineReuse && (
                     <div className="mt-1 text-[10px] leading-snug" style={{ color: "#f2c14e" }}>
@@ -525,7 +534,7 @@ export default function NsView() {
                         <td className="text-right">{Math.round(feas.interruptible.probBeatsDecom * 100)}%</td>
                       </tr>
                       <tr>
-                        <td className="py-0.5">C · firm compute + LDES (v1)</td>
+                        <td className="py-0.5">C · firm compute + LDES (v1 · critique: no-go)</td>
                         <td className="text-right">{gbpM(feas.compute.capexGBPm)}</td>
                         <td className="text-right">{gbpM(feas.compute.npvP10GBPm)}</td>
                         <td className="text-right" style={{ color: feas.compute.npvGBPm >= feas.decomNow.npvGBPm ? "#48a87c" : "#e2483d" }}>
@@ -576,8 +585,12 @@ export default function NsView() {
                   <Row k="fibre connectivity" v="proximity screened — dark-fibre capacity unverified" />
                   <Row k="marine opex" v={`£${concept.opexKGBPPerMWyr}k/MW-yr — offshore-wind O&M analogue, reference`} />
                   <Row k="classification / new deck loading" v="not modelled — flagged for platform-integrity review" />
-                  <Row k="OSPAR 98/3 / derogation" v="full removal is the regulatory default — repurposing is a case-by-case carve-out" />
-                  <Row k="pipeline internal condition" v="fibre-via-pipe assumes a pull-ready flooded line — pigging records are the proxy" />
+                  <Row k="OSPAR 98/3 / derogation" v="full removal is the default; every derogation to date was environmental — a compute case pioneers the category. EIA for a novel use class: 3-5 yr vs 18-month AI cycles" />
+                  <Row k="removal obligation" v="structure so decom liability is preserved and funded, not laundered — the regulator's core suspicion" />
+                  <Row k="pipeline internal condition" v="fibre-via-pipe assumes a pull-ready flooded line — pigging records are the proxy; needs operator NDA" />
+                  <Row k="GPU refresh logistics" v={`priced: ${Math.round(concept.refreshShare * 100)}% of compute capex every ${concept.refreshYears} yr as a marine campaign — must survive a real marine logistics quote`} />
+                  <Row k="wind offtake structure" v="behind-the-meter appetite + curtailment discount is THE live commercial question — one for a wind developer, not a desk study" />
+                  <Row k="Natick's shadow" v="Microsoft proved the physics, exited on logistics — this differs: surface access, existing corridors, interruptible model. Arguable, not assumed" />
                   <Row k="heavy-lift / vessel market" v="basin-wide capacity pressure — schedule risk, not priced here" />
                 </div>
               </Section>
