@@ -97,7 +97,10 @@ export interface ConceptInputs {
   opTiedWindRatio: number; // MW wind : MW IT (fatter than Option B's 1.5×)
   opImportShare: number; // grid import allowance via the wind farm's export connection, share of IT load
   opWheelingGBP: number; // £/MWh adder on hourly spot for imports
-  opAvailabilityFloor: number; // SLA floor; with legacy billing, abatement is pro-rata below it
+  opAvailabilityFloor: number; // SLA floor — a genuine downside trigger (see opSlaAbatementMult)
+  /** Penalty teeth: months below the SLA floor abate capacity revenue by
+   *  this multiple of the shortfall (e.g. 4pt short × 1.5 = 6% abatement). */
+  opSlaAbatementMult: number;
   /** Bill on DELIVERED availability (contracted × rate × monthly availability)
    *  rather than contracted capacity with below-floor abatement. The tenant-
    *  indifference repair: a 75%-available interruptible product cannot bill
@@ -165,7 +168,7 @@ export function defaultConcept(
     windDistanceKm,
     fibreCapexGBPmPer100km: 6,
     fibreDistanceKm,
-    opexKGBPPerMWyr: 180,
+    opexKGBPPerMWyr: 280, // same physical facility as the interruptible variant
     h2ElectrolyserMW: Math.round(computeMW * 1.0),
     h2PriceGBPkg: 6.08, // Aberdeen/NDC break-even anchor
     h2KwhPerKg: 52.5,
@@ -174,7 +177,10 @@ export function defaultConcept(
     intStrikeGBP: 35,
     intMinLoadShare: 0.15,
     intComputeCapexGBPmPerMW: 5,
-    intOpexKGBPPerMWyr: 120,
+    // Natick-honest marine opex: crew transfer/W2W vessel days, marine
+    // insurance, planned campaigns, unplanned intervention — £28m/yr per
+    // 100MW-IT. REFERENCE — pending O&M contractor quote.
+    intOpexKGBPPerMWyr: 280,
     intConversionGBPm: Math.round(decom * 0.35),
     bessCapexGBPm: 5,
     acCableGBPmPerKm: 0.8,
@@ -186,7 +192,10 @@ export function defaultConcept(
     // Tenant-indifference pricing: onshore ref £95 × ~0.75 availability
     // haircut × modest time-to-power uplift — NOT the onshore firm-capacity
     // convention the first draft wrongly imported.
-    opBaseCapacityRateKwMo: 90,
+    // Round 2 — premium double-count fixed: base × (1+premium) must land at
+    // the tenant-indifferent all-in £95-100/kW-mo. 72 × 1.35 ≈ £97. The
+    // premium stays a separate MC-drawn, tornado-visible parameter.
+    opBaseCapacityRateKwMo: 72,
     opTimeToPowerPremium: 0.35,
     opElecCostShare: 0.5,
     opGpuShareOfFitout: 0.6,
@@ -200,7 +209,8 @@ export function defaultConcept(
     opTiedWindRatio: 2.2,
     opImportShare: 0.15,
     opWheelingGBP: 12,
-    opAvailabilityFloor: 0.78,
+    opAvailabilityFloor: 0.72,
+    opSlaAbatementMult: 1.5,
     opBillOnDelivered: true,
     opAnchorDefaultProb: 0.04,
     opOnshoreRefRateKwMo: 95,
@@ -439,6 +449,8 @@ interface OpDraws {
   premium: number;
   capacityRateKwMo: number;
   relief: number;
+  /** Marine opex multiplier (normal σ20% — the Natick-sensitive line). */
+  opexMult: number;
   /** Anchor default year (1-based) or null; 12-month re-let void, then merchant. */
   defaultYear: number | null;
 }
@@ -452,9 +464,11 @@ function anchorYearRevenueGBP(c: ConceptInputs, bal: OpBalance, d: OpDraws): num
   for (const a of bal.monthlyAvail) {
     if (c.opBillOnDelivered) {
       // Delivered-availability billing: the tenant pays for what the wind
-      // actually carried. The floor is then a real SLA (met or breached),
-      // not a permanent discount mechanism.
-      billed += monthBill * Math.min(a, 1);
+      // actually carried — and the SLA floor has teeth: months below it
+      // abate the month's capacity charge by opSlaAbatementMult × shortfall.
+      const shortfall = Math.max(c.opAvailabilityFloor - a, 0);
+      const abate = Math.min(c.opSlaAbatementMult * shortfall, 1);
+      billed += monthBill * Math.min(a, 1) * (1 - abate);
     } else {
       billed += monthBill * (a >= c.opAvailabilityFloor ? 1 : a / c.opAvailabilityFloor);
     }
@@ -484,7 +498,7 @@ function operatorFlows(
   const rechargeCost = (c.opRefreshRechargeGBPmPer100MW * c.computeMW) / 100;
   for (let k = 1; k <= c.secondLifeYears; k++) {
     const esc = Math.pow(1 + c.inflation, k - 1);
-    const opex = (c.computeMW * c.intOpexKGBPPerMWyr * 1000 * esc) / 1e6;
+    const opex = (c.computeMW * c.intOpexKGBPPerMWyr * d.opexMult * 1000 * esc) / 1e6;
     const inAnchor = k <= c.opContractYears && (d.defaultYear === null || k < d.defaultYear);
     const voidYear = d.defaultYear !== null && k === d.defaultYear;
     let net: number;
@@ -562,6 +576,8 @@ export interface FeasibilityResult {
     operatorBreakevenRelief: number | null;
     /** Tenant ledger: effective all-in £/kW-IT/month, year 1. */
     tenantEffectiveKwMo: number;
+    /** The number a tenant computes first: effective rate per USABLE kW. */
+    tenantPerUsableKwMo: number;
   };
   runs: number;
 }
@@ -651,7 +667,7 @@ function h2Flows(c: ConceptInputs, shapes: YearShapes, windMult: number, remedia
  *  - structural remediation (fat right tail: mean × lognormal, σ≈0.6),
  *  - H2 price (σ≈20%).
  */
-export function runFeasibility(c: ConceptInputs, shapes: YearShapes, runs = 200, seed = 0x0507ea11): FeasibilityResult {
+export function runFeasibility(c: ConceptInputs, shapes: YearShapes, runs = 500, seed = 0x0507ea11): FeasibilityResult {
   const rng = mulberry32(seed >>> 0);
   const randn = () => Math.sqrt(-2 * Math.log(Math.max(rng(), 1e-12))) * Math.cos(2 * Math.PI * rng());
 
@@ -669,6 +685,7 @@ export function runFeasibility(c: ConceptInputs, shapes: YearShapes, runs = 200,
     premium: c.opTimeToPowerPremium,
     capacityRateKwMo: c.opBaseCapacityRateKwMo,
     relief: c.opDecomReliefRate,
+    opexMult: 1,
     defaultYear: null,
   };
   const opC = operatorFlows(c, opBalC, opDrawsC, c.remediationMeanGBPm, 1);
@@ -694,6 +711,7 @@ export function runFeasibility(c: ConceptInputs, shapes: YearShapes, runs = 200,
       premium: triangular(rng(), 0.1, 0.35, 0.7),
       capacityRateKwMo: c.opBaseCapacityRateKwMo * (1 + 0.15 * randn()),
       relief: 0.45 + 0.2 * rng(),
+      opexMult: Math.max(1 + 0.2 * randn(), 0.4),
       defaultYear:
         rng() < c.opAnchorDefaultProb && c.opContractYears > 0
           ? 1 + Math.floor(rng() * c.opContractYears)
@@ -814,6 +832,7 @@ export function runFeasibility(c: ConceptInputs, shapes: YearShapes, runs = 200,
       netDecomGBPm: c.decomCostGBPm * (1 - c.opDecomReliefRate),
       operatorBreakevenRelief: opBreakevenRelief,
       tenantEffectiveKwMo,
+      tenantPerUsableKwMo: tenantEffectiveKwMo / Math.max(opBalC.availability, 0.05),
     },
     interruptible: {
       npvGBPm: npv(c.discountRate, intC),
@@ -862,7 +881,8 @@ const TORNADO_E_KEYS: Array<{ key: keyof ConceptInputs; label: string }> = [
   { key: "opTiedWindRatio", label: "tied wind ratio" },
   { key: "opDecomReliefRate", label: "decom tax relief" },
   { key: "opStrikeGBP", label: "energy strike" },
-  { key: "opAvailabilityFloor", label: "availability floor" },
+  { key: "opAvailabilityFloor", label: "availability floor (SLA)" },
+  { key: "opSlaAbatementMult", label: "SLA abatement teeth" },
   { key: "intOpexKGBPPerMWyr", label: "marine opex" },
 ];
 
@@ -871,6 +891,7 @@ export function runTornadoE(c: ConceptInputs, shapes: YearShapes): TornadoRow[] 
     premium: cc.opTimeToPowerPremium,
     capacityRateKwMo: cc.opBaseCapacityRateKwMo,
     relief: cc.opDecomReliefRate,
+    opexMult: 1,
     defaultYear: null,
   });
   const evalNpv = (cc: ConceptInputs) =>
