@@ -32,7 +32,7 @@ const INK_MUTED = "var(--dk-muted, #667081)";
 const GRID = "var(--dk-edge, rgba(255,255,255,0.09))";
 const AEST_MS = 10 * 3600_000;
 
-const PAD = { left: 46, right: 14, top: 10, bottom: 24 };
+const PAD = { right: 14, top: 10, bottom: 24 };
 
 function buildCandles(pts: PricePoint[], bucketMs: number): Candle[] {
   const out: Candle[] = [];
@@ -80,14 +80,17 @@ export default function DeskChart({
   forecast,
   mode,
   height = 280,
+  initialWidth = 760,
 }: {
   actual: PricePoint[];
   forecast: ForecastSeries | null;
   mode: ChartMode;
   height?: number;
+  /** First-paint width before ResizeObserver reports (and for SSR/tests). */
+  initialWidth?: number;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(760);
+  const [width, setWidth] = useState(initialWidth);
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
@@ -102,6 +105,9 @@ export default function DeskChart({
   const [hover, setHover] = useState<number | null>(null); // hovered timestamp
 
   const model = useMemo(() => {
+    // Narrow screens: tighter left gutter, sparser time labels.
+    const narrow = width < 480;
+    const padLeft = narrow ? 38 : 46;
     const fc =
       forecast && forecast.t.length > 1
         ? forecast.t
@@ -130,16 +136,18 @@ export default function DeskChart({
     const yTicks: number[] = [];
     for (let v = Math.ceil(vMin / step) * step; v <= vMax; v += step) yTicks.push(v);
 
-    const plotW = width - PAD.left - PAD.right;
+    const plotW = width - padLeft - PAD.right;
     const plotH = height - PAD.top - PAD.bottom;
-    const x = (ts: number) => PAD.left + ((ts - tMin) / (tMax - tMin || 1)) * plotW;
+    const x = (ts: number) => padLeft + ((ts - tMin) / (tMax - tMin || 1)) * plotW;
     const y = (v: number) => PAD.top + (1 - (v - vMin) / (vMax - vMin || 1)) * plotH;
 
-    // 12-hourly ticks on AEST 00:00/12:00 boundaries.
+    // Time ticks on AEST boundaries: 12-hourly, thinned so labels (~60px
+    // each) never collide at narrow widths.
     const twelveH = 12 * 3600_000;
-    const first = Math.ceil((tMin + AEST_MS) / twelveH) * twelveH - AEST_MS;
+    const tickMs = Math.ceil((tMax - tMin) / Math.max(Math.floor(plotW / 62), 2) / twelveH) * twelveH;
+    const first = Math.ceil((tMin + AEST_MS) / tickMs) * tickMs - AEST_MS;
     const xTicks: number[] = [];
-    for (let ts = first; ts <= tMax; ts += twelveH) xTicks.push(ts);
+    for (let ts = first; ts <= tMax; ts += tickMs) xTicks.push(ts);
 
     const line = (pts: Array<[number, number]>) =>
       pts.map(([ts, v], i) => `${i === 0 ? "M" : "L"}${x(ts).toFixed(1)},${y(v).toFixed(1)}`).join("");
@@ -158,7 +166,7 @@ export default function DeskChart({
     const nowTs = fc[0]?.ts ?? null;
     const candleW = candles.length > 0 ? Math.max((x(tMin + 2 * 3600_000) - x(tMin)) - 2, 2) : 0;
 
-    return { act, fc, candles, tMin, tMax, x, y, yTicks, xTicks, actPath, fcPath, bandPath, nowTs, candleW, plotH };
+    return { act, fc, candles, tMin, tMax, x, y, yTicks, xTicks, actPath, fcPath, bandPath, nowTs, candleW, plotH, padLeft };
   }, [actual, forecast, mode, width, height]);
 
   if (!model) {
@@ -169,12 +177,13 @@ export default function DeskChart({
     );
   }
 
-  const { act, fc, candles, x, y, yTicks, xTicks, actPath, fcPath, bandPath, nowTs, candleW, tMin, tMax } = model;
+  const { act, fc, candles, x, y, yTicks, xTicks, actPath, fcPath, bandPath, nowTs, candleW, tMin, tMax, padLeft } = model;
 
-  // Hover readout: nearest sample on whichever side of "now" the cursor is.
-  const onMove = (ev: React.MouseEvent<SVGSVGElement>) => {
+  // Crosshair readout: pointer events cover mouse and touch; touch-action
+  // pan-y (set on the svg) keeps vertical page scrolling alive on mobile.
+  const onMove = (ev: React.PointerEvent<SVGSVGElement>) => {
     const rect = ev.currentTarget.getBoundingClientRect();
-    const ts = tMin + ((ev.clientX - rect.left - PAD.left) / (width - PAD.left - PAD.right)) * (tMax - tMin);
+    const ts = tMin + ((ev.clientX - rect.left - padLeft) / (width - padLeft - PAD.right)) * (tMax - tMin);
     setHover(Math.min(Math.max(ts, tMin), tMax));
   };
 
@@ -217,12 +226,22 @@ export default function DeskChart({
 
   return (
     <div ref={wrapRef} className="relative" style={{ height }}>
-      <svg width={width} height={height} onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img" aria-label="Price history and forecast">
+      <svg
+        width={width}
+        height={height}
+        onPointerMove={onMove}
+        onPointerDown={onMove}
+        onPointerLeave={() => setHover(null)}
+        onPointerCancel={() => setHover(null)}
+        style={{ touchAction: "pan-y" }}
+        role="img"
+        aria-label="Price history and forecast"
+      >
         {/* y grid + labels */}
         {yTicks.map((v) => (
           <g key={v}>
-            <line x1={PAD.left} x2={width - PAD.right} y1={y(v)} y2={y(v)} stroke={GRID} strokeWidth={1} />
-            <text x={PAD.left - 7} y={y(v) + 3.5} textAnchor="end" fontSize={10} fill={INK_MUTED} className="font-[family-name:var(--f-mono)]">
+            <line x1={padLeft} x2={width - PAD.right} y1={y(v)} y2={y(v)} stroke={GRID} strokeWidth={1} />
+            <text x={padLeft - 7} y={y(v) + 3.5} textAnchor="end" fontSize={10} fill={INK_MUTED} className="font-[family-name:var(--f-mono)]">
               ${Math.round(v)}
             </text>
           </g>
