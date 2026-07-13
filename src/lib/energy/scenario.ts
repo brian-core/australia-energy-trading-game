@@ -130,7 +130,8 @@ export const PIPELINE_PROJECTS: PipelineProject[] = [
 ];
 
 // Approximate registered capacity by fuel, MW (stylized; ±, mid-2020s).
-const REGION_CAPACITY_MW: Record<string, Partial<Record<FuelGroup, number>>> = {
+// Exported: the desk uses it to turn regional generation into capacity factors.
+export const REGION_CAPACITY_MW: Record<string, Partial<Record<FuelGroup, number>>> = {
   NSW1: { coal: 8240, gas: 2600, hydro: 4600, wind: 3600, solar: 5000, battery: 1800, distillate: 200 },
   QLD1: { coal: 8100, gas: 3300, hydro: 1700, wind: 2700, solar: 5500, battery: 1300, distillate: 400 },
   VIC1: { coal: 4760, gas: 2400, hydro: 2300, wind: 4800, solar: 2200, battery: 1200, distillate: 100 },
