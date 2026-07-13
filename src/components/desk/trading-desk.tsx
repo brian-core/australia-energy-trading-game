@@ -124,7 +124,7 @@ function Panel({
       className="rounded-xl border p-3"
       style={{ borderColor: "var(--dk-edge)", background: "var(--dk-panel)" }}
     >
-      <header className="mb-2.5 flex items-center justify-between gap-2">
+      <header className="mb-2.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
         <h2 className="text-[11px] font-semibold tracking-wide text-[var(--dk-ink)]">{title}</h2>
         {right && <span className="text-[9px] tracking-widest text-[var(--dk-muted)]">{right}</span>}
       </header>
@@ -365,8 +365,9 @@ export default function TradingDesk() {
   return (
     <div
       // The game locks body scrolling (full-screen map), so the desk scrolls
-      // inside its own full-height container.
-      className="h-screen overflow-y-auto overscroll-contain font-[family-name:var(--f-sans)] text-[12px]"
+      // inside its own full-height container. 100dvh tracks mobile browser
+      // chrome (URL bar) where supported; h-screen is the fallback.
+      className="h-screen overflow-y-auto overscroll-contain font-[family-name:var(--f-sans)] text-[12px] [height:100dvh]"
       style={
         {
           background: "var(--dk-bg)",
@@ -417,7 +418,7 @@ export default function TradingDesk() {
             <div className="text-[9.5px] tracking-widest text-[var(--dk-muted)]">AEST · MARKET TIME</div>
           </div>
           {view && (
-            <div className="border-l pl-5 text-right" style={{ borderColor: "var(--dk-edge)" }}>
+            <div className="text-right sm:border-l sm:pl-5" style={{ borderColor: "var(--dk-edge)" }}>
               <div className="text-[9.5px] tracking-widest text-[var(--dk-muted)]">BOOK MARGIN</div>
               <div
                 className="font-[family-name:var(--f-mono)] text-[19px] font-semibold"
@@ -729,7 +730,7 @@ export default function TradingDesk() {
         {/* blotter + ticket */}
         <Panel title="BLOTTER — OPEN PAPER POSITIONS" right={`${state.trades.length} OPEN`}>
           <div
-            className="mb-3 flex flex-wrap items-end gap-2 rounded-lg border p-2.5"
+            className="mb-3 grid grid-cols-2 items-end gap-2 rounded-lg border p-2.5 sm:flex sm:flex-wrap"
             style={{ borderColor: "var(--dk-edge)", background: "var(--dk-panel-2)" }}
           >
             <label className="flex flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
@@ -737,7 +738,7 @@ export default function TradingDesk() {
               <select
                 value={ticket.kind}
                 onChange={(e) => setKind(e.target.value as TradeKind)}
-                className="rounded border bg-black/30 px-1.5 py-1 text-[11px]"
+                className="w-full rounded border bg-black/30 px-1.5 py-1 text-[11px] sm:w-auto"
                 style={{ borderColor: "var(--dk-edge)" }}
               >
                 {KIND_OPTIONS.map((k) => (
@@ -752,7 +753,7 @@ export default function TradingDesk() {
               <select
                 value={ticket.region}
                 onChange={(e) => setTicket({ ...ticket, region: e.target.value })}
-                className="rounded border bg-black/30 px-1.5 py-1 text-[11px]"
+                className="w-full rounded border bg-black/30 px-1.5 py-1 text-[11px] sm:w-auto"
                 style={{ borderColor: "var(--dk-edge)" }}
               >
                 {REGIONS.map((r) => (
@@ -768,7 +769,7 @@ export default function TradingDesk() {
                 <select
                   value={ticket.window}
                   onChange={(e) => setTicket({ ...ticket, window: e.target.value as TradeWindow })}
-                  className="rounded border bg-black/30 px-1.5 py-1 text-[11px]"
+                  className="w-full rounded border bg-black/30 px-1.5 py-1 text-[11px] sm:w-auto"
                   style={{ borderColor: "var(--dk-edge)" }}
                 >
                   <option value="base">base (24/7)</option>
@@ -783,7 +784,7 @@ export default function TradingDesk() {
                 <select
                   value={ticket.source}
                   onChange={(e) => setTicket({ ...ticket, source: e.target.value as PpaSource })}
-                  className="rounded border bg-black/30 px-1.5 py-1 text-[11px]"
+                  className="w-full rounded border bg-black/30 px-1.5 py-1 text-[11px] sm:w-auto"
                   style={{ borderColor: "var(--dk-edge)" }}
                 >
                   <option value="wind">wind</option>
@@ -792,17 +793,17 @@ export default function TradingDesk() {
               </label>
             )}
             {ticket.kind === "lfs" ? (
-              <label className="flex w-20 flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
+              <label className="flex flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)] sm:w-20">
                 % OF LOAD
                 <input type="number" min={0} max={150} step={5} value={ticket.loadPct} onChange={(e) => setTicket({ ...ticket, loadPct: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
               </label>
             ) : (
-              <label className="flex w-16 flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
+              <label className="flex flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)] sm:w-16">
                 {ticket.kind === "ppa" ? "MW (NP)" : "MW"}
                 <input type="number" min={0} step={1} value={ticket.mw} onChange={(e) => setTicket({ ...ticket, mw: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
               </label>
             )}
-            <label className="flex w-20 flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
+            <label className="flex flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)] sm:w-20">
               {ticket.kind === "swap" || ticket.kind === "lfs"
                 ? "FIXED $/MWH"
                 : ticket.kind === "ppa"
@@ -813,31 +814,31 @@ export default function TradingDesk() {
               <input type="number" min={0} step={5} value={ticket.strike} onChange={(e) => setTicket({ ...ticket, strike: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
             </label>
             {ticket.kind === "collar" && (
-              <label className="flex w-20 flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
+              <label className="flex flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)] sm:w-20">
                 FLOOR STRIKE
                 <input type="number" min={0} step={5} value={ticket.floorStrike} onChange={(e) => setTicket({ ...ticket, floorStrike: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
               </label>
             )}
             {["cap", "floor", "collar"].includes(ticket.kind) && (
-              <label className="flex w-20 flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
+              <label className="flex flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)] sm:w-20">
                 {ticket.kind === "cap" ? "PREMIUM PAID" : ticket.kind === "floor" ? "PREMIUM RECV" : "NET PREMIUM"}
                 <input type="number" step={1} value={ticket.premium} onChange={(e) => setTicket({ ...ticket, premium: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
               </label>
             )}
             {ticket.kind === "ppa" && (
-              <label className="flex w-20 flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
+              <label className="flex flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)] sm:w-20">
                 LGC $/MWH
                 <input type="number" min={0} step={1} value={ticket.lgc} onChange={(e) => setTicket({ ...ticket, lgc: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
               </label>
             )}
             <button
               onClick={bookTrade}
-              className="rounded-lg px-3.5 py-1.5 text-[11px] font-bold tracking-wider text-white"
+              className="col-span-2 rounded-lg px-3.5 py-2 text-[11px] font-bold tracking-wider text-white sm:col-auto sm:py-1.5"
               style={{ background: ACCENT }}
             >
               BOOK
             </button>
-            <span className="max-w-[210px] text-[9.5px] leading-snug text-[var(--dk-muted)]">
+            <span className="col-span-2 text-[9.5px] leading-snug text-[var(--dk-muted)] sm:col-auto sm:max-w-[210px]">
               {ticket.kind === "floor"
                 ? "sold floor: premium in, you pay when spot settles below strike"
                 : ticket.kind === "collar"
@@ -891,7 +892,10 @@ export default function TradingDesk() {
                         {mtm == null ? "—" : money(mtm)}
                       </td>
                       <td className="border-b py-2 text-right" style={{ borderColor: "var(--dk-edge)" }}>
-                        <button onClick={() => dropTrade(t.id)} className="text-[10px] tracking-wider text-[var(--dk-muted)] hover:text-[var(--dk-ink)]">
+                        <button
+                          onClick={() => dropTrade(t.id)}
+                          className="-my-1 rounded px-2 py-1.5 text-[10px] tracking-wider text-[var(--dk-muted)] hover:text-[var(--dk-ink)]"
+                        >
                           CLOSE
                         </button>
                       </td>
