@@ -458,12 +458,18 @@ export default function DeskPanel({ live }: { live: LivePayload }) {
           </div>
           <div className="space-y-1">
             {state.trades.map((t) => {
-              const mtm = tradeMtmPerH(t, spotByRegion.get(t.region) ?? null);
+              const mtm = tradeMtmPerH(t, spotByRegion.get(t.region) ?? null, {
+                loadMW: state.book.loadsMW[t.region] ?? 0,
+              });
               return (
                 <div key={t.id} className="flex items-center justify-between gap-2 text-[11px]">
                   <span>
-                    {t.kind.toUpperCase()} {t.region.replace(/\d$/, "")} {t.mw}MW @ ${t.strikeAUD}
-                    {t.kind === "cap" ? ` (prem $${t.premiumAUD})` : ""}
+                    {t.kind.toUpperCase()} {t.region.replace(/\d$/, "")}{" "}
+                    {t.kind === "lfs" ? `${Math.round((t.loadPct ?? 0) * 100)}% load` : `${t.mw}MW`} @ $
+                    {t.strikeAUD}
+                    {t.kind === "cap" || t.kind === "floor" || t.kind === "collar"
+                      ? ` (prem $${t.premiumAUD})`
+                      : ""}
                   </span>
                   <span className="flex items-center gap-2">
                     <span style={{ color: mtm == null ? "var(--ink-soft)" : mtm >= 0 ? "var(--gen)" : "#e2483d" }}>

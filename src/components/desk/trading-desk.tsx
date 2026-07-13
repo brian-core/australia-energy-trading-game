@@ -5,10 +5,13 @@ import {
   STRESS_SPOT_AUD,
   computePositions,
   evaluateAlerts,
+  liveMarkCtx,
   tradeMtmPerH,
   type Book,
+  type PpaSource,
   type Trade,
   type TradeKind,
+  type TradeWindow,
 } from "@/lib/energy/desk";
 import { DESK_STORAGE_KEY, loadDeskState, type DeskState } from "@/lib/energy/desk-storage";
 import { runBacktest } from "@/lib/energy/backtest";
@@ -43,6 +46,67 @@ function money(x: number): string {
 
 function short(code: string): string {
   return code.replace(/\d$/, "");
+}
+
+interface TicketState {
+  kind: TradeKind;
+  region: string;
+  mw: number;
+  strike: number;
+  premium: number;
+  window: TradeWindow;
+  floorStrike: number;
+  loadPct: number; // percent, 0-100 in the UI
+  source: PpaSource;
+  lgc: number;
+}
+
+/** Sensible market-ish defaults when the product type changes. */
+function ticketDefaults(kind: TradeKind): Partial<TicketState> {
+  switch (kind) {
+    case "swap":
+      return { mw: 5, strike: 100, premium: 0, window: "base" };
+    case "cap":
+      return { mw: 5, strike: 300, premium: 12, window: "base" };
+    case "floor":
+      return { mw: 5, strike: 40, premium: 6, window: "base" };
+    case "collar":
+      return { mw: 5, strike: 300, floorStrike: 50, premium: 4, window: "base" };
+    case "lfs":
+      return { strike: 110, loadPct: 50 };
+    case "ppa":
+      return { mw: 20, strike: 55, source: "wind", lgc: 30 };
+  }
+}
+
+const KIND_OPTIONS: { value: TradeKind; label: string }[] = [
+  { value: "swap", label: "swap (fixed)" },
+  { value: "cap", label: "cap" },
+  { value: "floor", label: "floor (sell)" },
+  { value: "collar", label: "collar" },
+  { value: "lfs", label: "load-following swap" },
+  { value: "ppa", label: "PPA (as-generated)" },
+];
+
+function windowTag(w?: TradeWindow): string {
+  return !w || w === "base" ? "" : w === "peak" ? " PK" : " OP";
+}
+
+function tradeLabel(t: Trade): string {
+  switch (t.kind) {
+    case "swap":
+      return `SWAP${windowTag(t.window)}`;
+    case "cap":
+      return `CAP${windowTag(t.window)} −$${t.premiumAUD}`;
+    case "floor":
+      return `FLOOR${windowTag(t.window)} sold +$${t.premiumAUD}`;
+    case "collar":
+      return `COLLAR${windowTag(t.window)} ${t.floorStrikeAUD ?? 0}/${t.strikeAUD}`;
+    case "lfs":
+      return `LFS ${Math.round((t.loadPct ?? 0) * 100)}% load`;
+    case "ppa":
+      return `PPA ${(t.source ?? "wind").toUpperCase()}${t.lgcAUD ? ` +LGC$${t.lgcAUD}` : ""}`;
+  }
 }
 
 function Panel({
@@ -121,13 +185,19 @@ export default function TradingDesk() {
   const [fwdRegion, setFwdRegion] = useState("NSW1");
   const [clock, setClock] = useState("");
   const [showBook, setShowBook] = useState(false);
-  const [ticket, setTicket] = useState<{ kind: TradeKind; region: string; mw: number; strike: number; premium: number }>({
+  const [ticket, setTicket] = useState<TicketState>({
     kind: "swap",
     region: "NSW1",
     mw: 5,
     strike: 100,
-    premium: 12,
+    premium: 0,
+    window: "base",
+    floorStrike: 50,
+    loadPct: 50,
+    source: "wind",
+    lgc: 30,
   });
+  const setKind = (kind: TradeKind) => setTicket((t) => ({ ...t, kind, ...ticketDefaults(kind) }));
 
   // Persist the shared book/trades on every change (same key as the game).
   useEffect(() => {
@@ -214,8 +284,8 @@ export default function TradingDesk() {
   );
   const alerts = useMemo(() => (view ? evaluateAlerts(view, state.book) : []), [view, state.book]);
   const backtest = useMemo(
-    () => (history ? runBacktest(history, state.book, state.trades) : null),
-    [history, state.book, state.trades],
+    () => (history ? runBacktest(history, state.book, state.trades, series ?? undefined) : null),
+    [history, state.book, state.trades, series],
   );
   const forecast = useMemo(
     () => (series && weather ? buildForecast(series, weather, 48) : null),
@@ -256,14 +326,21 @@ export default function TradingDesk() {
     : { label: "CONNECTING", color: "var(--dk-muted)" };
 
   const bookTrade = () => {
-    if (ticket.mw <= 0 || ticket.strike <= 0) return;
+    const isLfs = ticket.kind === "lfs";
+    if ((isLfs ? ticket.loadPct : ticket.mw) <= 0 || ticket.strike <= 0) return;
+    const hasWindow = ["swap", "cap", "floor", "collar"].includes(ticket.kind);
+    const hasPremium = ["cap", "floor", "collar"].includes(ticket.kind);
     const trade: Trade = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       kind: ticket.kind,
       region: ticket.region,
-      mw: ticket.mw,
+      mw: isLfs ? 0 : ticket.mw,
       strikeAUD: ticket.strike,
-      premiumAUD: ticket.kind === "cap" ? ticket.premium : 0,
+      premiumAUD: hasPremium ? ticket.premium : 0,
+      ...(hasWindow && ticket.window !== "base" ? { window: ticket.window } : {}),
+      ...(ticket.kind === "collar" ? { floorStrikeAUD: ticket.floorStrike } : {}),
+      ...(isLfs ? { loadPct: ticket.loadPct / 100 } : {}),
+      ...(ticket.kind === "ppa" ? { source: ticket.source, lgcAUD: ticket.lgc } : {}),
       createdAt: new Date().toISOString(),
     };
     setState((s) => ({ ...s, trades: [trade, ...s.trades] }));
@@ -626,12 +703,15 @@ export default function TradingDesk() {
               PRODUCT
               <select
                 value={ticket.kind}
-                onChange={(e) => setTicket({ ...ticket, kind: e.target.value as TradeKind })}
+                onChange={(e) => setKind(e.target.value as TradeKind)}
                 className="rounded border bg-black/30 px-1.5 py-1 text-[11px]"
                 style={{ borderColor: "var(--dk-edge)" }}
               >
-                <option value="swap">swap (fixed)</option>
-                <option value="cap">cap</option>
+                {KIND_OPTIONS.map((k) => (
+                  <option key={k.value} value={k.value}>
+                    {k.label}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="flex flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
@@ -649,18 +729,72 @@ export default function TradingDesk() {
                 ))}
               </select>
             </label>
-            <label className="flex w-16 flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
-              MW
-              <input type="number" min={0} step={1} value={ticket.mw} onChange={(e) => setTicket({ ...ticket, mw: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
-            </label>
+            {["swap", "cap", "floor", "collar"].includes(ticket.kind) && (
+              <label className="flex flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
+                WINDOW
+                <select
+                  value={ticket.window}
+                  onChange={(e) => setTicket({ ...ticket, window: e.target.value as TradeWindow })}
+                  className="rounded border bg-black/30 px-1.5 py-1 text-[11px]"
+                  style={{ borderColor: "var(--dk-edge)" }}
+                >
+                  <option value="base">base (24/7)</option>
+                  <option value="peak">peak (wkdy 7–22)</option>
+                  <option value="offpeak">off-peak</option>
+                </select>
+              </label>
+            )}
+            {ticket.kind === "ppa" && (
+              <label className="flex flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
+                SOURCE
+                <select
+                  value={ticket.source}
+                  onChange={(e) => setTicket({ ...ticket, source: e.target.value as PpaSource })}
+                  className="rounded border bg-black/30 px-1.5 py-1 text-[11px]"
+                  style={{ borderColor: "var(--dk-edge)" }}
+                >
+                  <option value="wind">wind</option>
+                  <option value="solar">solar</option>
+                </select>
+              </label>
+            )}
+            {ticket.kind === "lfs" ? (
+              <label className="flex w-20 flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
+                % OF LOAD
+                <input type="number" min={0} max={150} step={5} value={ticket.loadPct} onChange={(e) => setTicket({ ...ticket, loadPct: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
+              </label>
+            ) : (
+              <label className="flex w-16 flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
+                {ticket.kind === "ppa" ? "MW (NP)" : "MW"}
+                <input type="number" min={0} step={1} value={ticket.mw} onChange={(e) => setTicket({ ...ticket, mw: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
+              </label>
+            )}
             <label className="flex w-20 flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
-              {ticket.kind === "swap" ? "FIXED $/MWH" : "STRIKE $/MWH"}
+              {ticket.kind === "swap" || ticket.kind === "lfs"
+                ? "FIXED $/MWH"
+                : ticket.kind === "ppa"
+                  ? "PPA $/MWH"
+                  : ticket.kind === "floor"
+                    ? "FLOOR STRIKE"
+                    : "CAP STRIKE"}
               <input type="number" min={0} step={5} value={ticket.strike} onChange={(e) => setTicket({ ...ticket, strike: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
             </label>
-            {ticket.kind === "cap" && (
+            {ticket.kind === "collar" && (
               <label className="flex w-20 flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
-                PREMIUM $/MWH
-                <input type="number" min={0} step={1} value={ticket.premium} onChange={(e) => setTicket({ ...ticket, premium: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
+                FLOOR STRIKE
+                <input type="number" min={0} step={5} value={ticket.floorStrike} onChange={(e) => setTicket({ ...ticket, floorStrike: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
+              </label>
+            )}
+            {["cap", "floor", "collar"].includes(ticket.kind) && (
+              <label className="flex w-20 flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
+                {ticket.kind === "cap" ? "PREMIUM PAID" : ticket.kind === "floor" ? "PREMIUM RECV" : "NET PREMIUM"}
+                <input type="number" step={1} value={ticket.premium} onChange={(e) => setTicket({ ...ticket, premium: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
+              </label>
+            )}
+            {ticket.kind === "ppa" && (
+              <label className="flex w-20 flex-col gap-1 text-[9px] tracking-widest text-[var(--dk-muted)]">
+                LGC $/MWH
+                <input type="number" min={0} step={1} value={ticket.lgc} onChange={(e) => setTicket({ ...ticket, lgc: Number(e.target.value) || 0 })} className={inputCls} style={{ borderColor: "var(--dk-edge)" }} />
               </label>
             )}
             <button
@@ -670,8 +804,16 @@ export default function TradingDesk() {
             >
               BOOK
             </button>
-            <span className="text-[9.5px] text-[var(--dk-muted)]">
-              paper only — settles against live 5-min spot
+            <span className="max-w-[210px] text-[9.5px] leading-snug text-[var(--dk-muted)]">
+              {ticket.kind === "floor"
+                ? "sold floor: premium in, you pay when spot settles below strike"
+                : ticket.kind === "collar"
+                  ? "buy cap + sell floor; net premium may be negative (received)"
+                  : ticket.kind === "lfs"
+                    ? "volume tracks your shaped retail load each interval"
+                    : ticket.kind === "ppa"
+                      ? "volume follows the region's as-generated profile; LGCs credited per MWh"
+                      : "paper only — settles against live 5-min spot"}
             </span>
           </div>
 
@@ -688,21 +830,26 @@ export default function TradingDesk() {
               </thead>
               <tbody className="font-[family-name:var(--f-mono)]">
                 {state.trades.map((t) => {
-                  const spot = live?.regions.find((r) => r.code === t.region)?.priceAUD ?? null;
-                  const mtm = tradeMtmPerH(t, spot);
+                  const liveRegion = live?.regions.find((r) => r.code === t.region) ?? null;
+                  const spot = liveRegion?.priceAUD ?? null;
+                  const mtm = tradeMtmPerH(
+                    t,
+                    spot,
+                    liveMarkCtx(liveRegion, state.book.loadsMW[t.region] ?? 0),
+                  );
                   return (
                     <tr key={t.id} className="hover:bg-white/[0.03]">
                       <td className="border-b py-2 pr-3 text-[var(--dk-muted)]" style={{ borderColor: "var(--dk-edge)" }}>
                         {t.createdAt.slice(5, 16).replace("T", " ")}
                       </td>
                       <td className="border-b py-2 pr-3" style={{ borderColor: "var(--dk-edge)" }}>
-                        {t.kind === "swap" ? "SWAP" : `CAP (+$${t.premiumAUD})`}
+                        {tradeLabel(t)}
                       </td>
                       <td className="border-b py-2 pr-3" style={{ borderColor: "var(--dk-edge)" }}>
                         {short(t.region)}
                       </td>
                       <td className="border-b py-2 pr-3 text-right" style={{ borderColor: "var(--dk-edge)" }}>
-                        {t.mw}
+                        {t.kind === "lfs" ? `${Math.round((t.loadPct ?? 0) * 100)}%` : t.mw}
                       </td>
                       <td className="border-b py-2 pr-3 text-right" style={{ borderColor: "var(--dk-edge)" }}>
                         ${t.strikeAUD}
