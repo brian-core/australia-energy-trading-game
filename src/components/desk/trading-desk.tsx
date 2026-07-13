@@ -282,7 +282,9 @@ export default function TradingDesk() {
 
   return (
     <div
-      className="min-h-screen font-[family-name:var(--f-sans)] text-[12px]"
+      // The game locks body scrolling (full-screen map), so the desk scrolls
+      // inside its own full-height container.
+      className="h-screen overflow-y-auto overscroll-contain font-[family-name:var(--f-sans)] text-[12px]"
       style={
         {
           background: "var(--dk-bg)",
