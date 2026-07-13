@@ -22,6 +22,7 @@ import type { SeriesPayload } from "@/lib/energy/series";
 import type { WeatherPayload } from "@/lib/energy/weather";
 import type { LivePayload } from "@/lib/energy/types";
 import PriceChart from "../energy/price-chart";
+import DeskChart, { type ChartMode } from "./desk-chart";
 
 // MERIDIAN DESK — the wholesale-desk face of the same engine that powers the
 // game. No game mechanics: this is the retailer view. Positions, coverage,
@@ -307,15 +308,19 @@ export default function TradingDesk() {
   }, [backtest]);
 
   const fwd = forecast?.regions[fwdRegion];
-  const fwdSeries = useMemo(() => {
-    if (!fwd) return null;
-    const pts = (v: number[]): PricePoint[] => fwd.t.map((ts, i) => [ts, v[i]] as PricePoint);
-    return { hat: pts(fwd.priceHat), lo: pts(fwd.priceLo), hi: pts(fwd.priceHi) };
-  }, [fwd]);
-  const recentActual = useMemo(() => {
+  const fwdSeries = useMemo(
+    () => (fwd ? { t: fwd.t, hat: fwd.priceHat, lo: fwd.priceLo, hi: fwd.priceHi } : null),
+    [fwd],
+  );
+  // Last 48 hours of actuals by TIME (history is 5-min data since the v4
+  // migration, so a fixed point-count would cover only a few hours).
+  const recentActual = useMemo<PricePoint[]>(() => {
     const pts = history?.regions[fwdRegion];
-    return pts ? pts.slice(-96) : undefined;
+    if (!pts || pts.length === 0) return [];
+    const cutoff = pts[pts.length - 1][0] - 48 * 3600_000;
+    return pts.filter(([ts]) => ts >= cutoff);
   }, [history, fwdRegion]);
+  const [chartMode, setChartMode] = useState<ChartMode>("line");
 
   const feedChip = live
     ? live.demo
@@ -486,17 +491,37 @@ export default function TradingDesk() {
         <div className="mb-3 grid gap-3 lg:grid-cols-[1.8fr_1fr]">
           <Panel
             title={`FORWARD VIEW — ${short(fwdRegion)} · LAB MODEL, NEXT 48H`}
-            right={fwd ? `fit r² ${fwd.fit.priceModel.r2.toFixed(2)} · P10–P90` : "fitting…"}
+            right={
+              <span className="inline-flex items-center gap-3">
+                {fwd && <span>fit r² {fwd.fit.priceModel.r2.toFixed(2)}</span>}
+                <span
+                  className="inline-flex gap-0.5 rounded-md border p-0.5"
+                  style={{ borderColor: "var(--dk-edge)", background: "var(--dk-panel-2)" }}
+                  role="group"
+                  aria-label="Chart style"
+                >
+                  {(["line", "candles"] as ChartMode[]).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setChartMode(m)}
+                      aria-pressed={chartMode === m}
+                      className="rounded px-2 py-0.5 text-[9px] font-semibold tracking-widest"
+                      style={
+                        chartMode === m
+                          ? { background: ACCENT, color: "#fff" }
+                          : { color: "var(--dk-ink-2)" }
+                      }
+                    >
+                      {m.toUpperCase()}
+                    </button>
+                  ))}
+                </span>
+              </span>
+            }
           >
-            {fwdSeries ? (
+            {fwdSeries || recentActual.length > 1 ? (
               <>
-                <PriceChart
-                  points={fwdSeries.hat}
-                  bands={[{ lo: fwdSeries.lo, hi: fwdSeries.hi }]}
-                  secondary={recentActual}
-                  height={190}
-                  color={ACCENT}
-                />
+                <DeskChart actual={recentActual} forecast={fwdSeries} mode={chartMode} height={280} />
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-[var(--dk-ink-2)]">
                   <span className="inline-flex items-center gap-1.5">
                     <span className="inline-block h-[3px] w-3 rounded" style={{ background: ACCENT }} />
@@ -507,9 +532,17 @@ export default function TradingDesk() {
                     P10–P90
                   </span>
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="inline-block h-[3px] w-3 rounded bg-white/30" />
-                    last 48h actual
+                    {chartMode === "line" ? (
+                      <span className="inline-block h-[3px] w-3 rounded bg-white/30" />
+                    ) : (
+                      <span className="inline-flex gap-px">
+                        <span className="inline-block h-2.5 w-1 rounded-sm" style={{ background: GOOD }} />
+                        <span className="inline-block h-2.5 w-1 rounded-sm" style={{ background: BAD }} />
+                      </span>
+                    )}
+                    last 48h actual{chartMode === "candles" ? " · 2h candles" : ""}
                   </span>
+                  {!fwdSeries && <span className="text-[var(--dk-muted)]">forecast fitting…</span>}
                   {series?.demo && <span style={{ color: WARN }}>SYNTHETIC SERIES</span>}
                   {fwd && fwd.fit.outage.impliedOutMW > 200 && (
                     <span style={{ color: WARN }}>
@@ -519,7 +552,7 @@ export default function TradingDesk() {
                 </div>
               </>
             ) : (
-              <div className="grid h-[190px] place-items-center text-[10.5px] text-[var(--dk-muted)]">
+              <div className="grid h-[280px] place-items-center text-[10.5px] text-[var(--dk-muted)]">
                 fitting price model from 7-day series + weather…
               </div>
             )}
