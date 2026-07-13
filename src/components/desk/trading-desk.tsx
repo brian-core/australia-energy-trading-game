@@ -413,7 +413,7 @@ export default function TradingDesk() {
               <>
                 <PriceChart
                   points={fwdSeries.hat}
-                  band={{ lo: fwdSeries.lo, hi: fwdSeries.hi }}
+                  bands={[{ lo: fwdSeries.lo, hi: fwdSeries.hi }]}
                   secondary={recentActual}
                   height={190}
                   color={ACCENT}
