@@ -23,6 +23,7 @@ import type { WeatherPayload } from "@/lib/energy/weather";
 import type { LivePayload } from "@/lib/energy/types";
 import PriceChart from "../energy/price-chart";
 import DeskChart, { type ChartMode } from "./desk-chart";
+import BuyTimingPanel from "./buy-timing-panel";
 
 // MERIDIAN DESK — the wholesale-desk face of the same engine that powers the
 // game. No game mechanics: this is the retailer view. Positions, coverage,
@@ -725,6 +726,11 @@ export default function TradingDesk() {
               })}
             </div>
           </Panel>
+        </div>
+
+        {/* prior-quarter procurement analytics (region follows the spot-tile selection) */}
+        <div className="mb-3">
+          <BuyTimingPanel region={fwdRegion} />
         </div>
 
         {/* blotter + ticket */}
