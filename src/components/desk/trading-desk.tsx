@@ -24,6 +24,7 @@ import type { LivePayload } from "@/lib/energy/types";
 import PriceChart from "../energy/price-chart";
 import DeskChart, { type ChartMode } from "./desk-chart";
 import BuyTimingPanel from "./buy-timing-panel";
+import DeskChat from "./desk-chat";
 
 // MERIDIAN DESK — the wholesale-desk face of the same engine that powers the
 // game. No game mechanics: this is the retailer view. Positions, coverage,
@@ -362,6 +363,89 @@ export default function TradingDesk() {
   const maxAbsPos = view
     ? Math.max(...view.regions.map((r) => Math.abs(r.swapMW + r.capMW - r.loadMW)), 1)
     : 1;
+
+  // Compact snapshot of everything on screen for the AI desk analyst. Built
+  // fresh at send time so commentary matches the numbers the user is seeing.
+  const chatSnapshot = () => {
+    const fwdF = forecast?.regions[fwdRegion];
+    const finiteMax = (a: number[]) => Math.max(...a.filter(Number.isFinite));
+    const finiteMin = (a: number[]) => Math.min(...a.filter(Number.isFinite));
+    return {
+      marketTimeAEST: new Date(Date.now() + 10 * 3600_000).toISOString().slice(0, 16).replace("T", " "),
+      feeds: live ? { ...live.sources, demo: live.demo } : "connecting",
+      spot: live?.regions.map((r) => ({
+        region: r.code,
+        priceAUD: r.priceAUD,
+        demandMW: r.demandMW,
+        netInterchangeMW: r.netInterchangeMW,
+        renewableShare: Number(r.renewableShare.toFixed(2)),
+      })),
+      retailBook: {
+        flatRateCkwh: state.book.flatRateCkwh,
+        nonEnergyCkwh: state.book.nonEnergyCkwh,
+        targetCoveragePct: Math.round(state.book.targetCoverage * 100),
+        loadsMW: state.book.loadsMW,
+      },
+      openTrades: state.trades.map((t) => {
+        const lr = live?.regions.find((r) => r.code === t.region) ?? null;
+        return {
+          kind: t.kind,
+          region: t.region,
+          mw: t.kind === "lfs" ? undefined : t.mw,
+          loadPct: t.loadPct,
+          strikeAUD: t.strikeAUD,
+          premiumAUD: t.premiumAUD || undefined,
+          window: t.window,
+          floorStrikeAUD: t.floorStrikeAUD,
+          source: t.source,
+          lgcAUD: t.lgcAUD,
+          mtmPerH: lr
+            ? Math.round(
+                tradeMtmPerH(t, lr.priceAUD, liveMarkCtx(lr, state.book.loadsMW[t.region] ?? 0)) ?? 0,
+              )
+            : null,
+        };
+      }),
+      positions: view?.regions
+        .filter((r) => r.loadMW > 0)
+        .map((r) => ({
+          region: r.code,
+          loadMW: r.loadMW,
+          coverPct: Math.round(r.coverage * 100),
+          priceFixingMW: Number(r.swapMW.toFixed(1)),
+          optionCoverMW: Number(r.capMW.toFixed(1)),
+          marginPerH: Math.round(r.marginPerH),
+          effEnergyCostAUD: r.effCostAUD != null ? Math.round(r.effCostAUD) : null,
+        })),
+      portfolio: view
+        ? {
+            marginPerH: Math.round(view.marginPerH),
+            marginPerDay: Math.round(view.marginPerDay),
+            coveragePct: Math.round(view.coverage * 100),
+            stressMarginPerH_at10k: Math.round(view.stressMarginPerH),
+          }
+        : null,
+      backtest7d: backtest
+        ? {
+            marginAUD: Math.round(backtest.marginAUD),
+            marginPerMWh: Number(backtest.marginPerMWh.toFixed(1)),
+            underwaterSharePct: Math.round(backtest.underwaterShare * 100),
+            worstDayAUD: daily ? Math.round(daily.worst) : undefined,
+          }
+        : null,
+      activeSignals: alerts.map((a) => a.message).slice(0, 8),
+      forecast48h: fwdF
+        ? {
+            region: fwdRegion,
+            model: "LAB statistical fit (not a traded curve)",
+            fitR2: Number(fwdF.fit.priceModel.r2.toFixed(2)),
+            p50MaxAUD: Math.round(finiteMax(fwdF.priceHat)),
+            p50MinAUD: Math.round(finiteMin(fwdF.priceHat)),
+            impliedThermalOutageMW: Math.round(fwdF.fit.outage.impliedOutMW),
+          }
+        : null,
+    };
+  };
 
   return (
     <div
@@ -976,6 +1060,8 @@ export default function TradingDesk() {
             )}
           </Panel>
         </div>
+
+        <DeskChat snapshot={chatSnapshot} />
 
         <p className="mt-5 text-center text-[9.5px] leading-relaxed text-[var(--dk-muted)]">
           MERIDIAN DESK runs the Energy Planet simulation engine against live AEMO / OpenElectricity data.
