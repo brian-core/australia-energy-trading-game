@@ -2,16 +2,22 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// AI desk analyst chat: a floating drawer over the desk. Each question ships
-// with a fresh snapshot of what the desk is currently showing (built by the
-// parent), so the analyst comments on the numbers actually on screen. The
-// reply streams token-by-token from /api/desk/chat.
+// AI desk analyst chat: a full-height right drawer with tabbed conversations.
+// Each question ships with a fresh snapshot of what the desk is currently
+// showing (built by the parent), so the analyst comments on the numbers
+// actually on screen. Replies stream token-by-token from /api/desk/chat and
+// keep streaming into their own tab even if the user switches tabs.
 
 const ACCENT = "#4d8dff";
 
 interface Msg {
   role: "user" | "assistant";
   content: string;
+}
+
+interface Chat {
+  id: string;
+  msgs: Msg[];
 }
 
 const STARTERS = [
@@ -23,18 +29,64 @@ const STARTERS = [
 
 export default function DeskChat({ snapshot }: { snapshot: () => unknown }) {
   const [open, setOpen] = useState(false);
-  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [chats, setChats] = useState<Chat[]>([{ id: "c1", msgs: [] }]);
+  const [activeId, setActiveId] = useState("c1");
   const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState<number | null>(null);
+  const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
+  const [copied, setCopied] = useState<string | null>(null); // `${chatId}:${msgIdx}`
   const scrollRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const aborts = useRef(new Map<string, AbortController>());
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nextChatNo = useRef(2);
 
-  const copy = async (idx: number, text: string) => {
+  const active = chats.find((c) => c.id === activeId) ?? chats[0];
+  const busy = busyIds.has(active.id);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [active.msgs, activeId, open]);
+
+  useEffect(() => {
+    const map = aborts.current;
+    return () => {
+      map.forEach((c) => c.abort());
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    };
+  }, []);
+
+  const setBusyFor = (chatId: string, on: boolean) =>
+    setBusyIds((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(chatId);
+      else next.delete(chatId);
+      return next;
+    });
+
+  const patchChat = (chatId: string, fn: (msgs: Msg[]) => Msg[]) =>
+    setChats((cs) => cs.map((c) => (c.id === chatId ? { ...c, msgs: fn(c.msgs) } : c)));
+
+  const newChat = () => {
+    const id = `c${nextChatNo.current++}`;
+    setChats((cs) => [...cs, { id, msgs: [] }]);
+    setActiveId(id);
+  };
+
+  const closeChat = (chatId: string) => {
+    aborts.current.get(chatId)?.abort();
+    aborts.current.delete(chatId);
+    setBusyFor(chatId, false);
+    setChats((cs) => {
+      const remaining = cs.filter((c) => c.id !== chatId);
+      const next = remaining.length > 0 ? remaining : [{ id: `c${nextChatNo.current++}`, msgs: [] }];
+      if (chatId === activeId) setActiveId(next[next.length - 1].id);
+      return next;
+    });
+  };
+
+  const copy = async (key: string, text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      setCopied(idx);
+      setCopied(key);
       if (copyTimer.current) clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopied(null), 1500);
     } catch {
@@ -42,29 +94,18 @@ export default function DeskChat({ snapshot }: { snapshot: () => unknown }) {
     }
   };
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [msgs, open]);
-
-  useEffect(
-    () => () => {
-      abortRef.current?.abort();
-      if (copyTimer.current) clearTimeout(copyTimer.current);
-    },
-    [],
-  );
-
   const send = async (text: string) => {
     const q = text.trim();
-    if (!q || busy) return;
+    const chatId = active.id;
+    if (!q || busyIds.has(chatId)) return;
     setDraft("");
-    setBusy(true);
-    const history = [...msgs, { role: "user" as const, content: q }];
-    setMsgs([...history, { role: "assistant", content: "" }]);
+    setBusyFor(chatId, true);
+    const history = [...active.msgs, { role: "user" as const, content: q }];
+    patchChat(chatId, () => [...history, { role: "assistant", content: "" }]);
 
     const append = (chunk: string) =>
-      setMsgs((m) => {
-        const out = [...m];
+      patchChat(chatId, (msgs) => {
+        const out = [...msgs];
         out[out.length - 1] = {
           role: "assistant",
           content: out[out.length - 1].content + chunk,
@@ -73,7 +114,7 @@ export default function DeskChat({ snapshot }: { snapshot: () => unknown }) {
       });
 
     const ctrl = new AbortController();
-    abortRef.current = ctrl;
+    aborts.current.set(chatId, ctrl);
     try {
       const res = await fetch("/api/desk/chat", {
         method: "POST",
@@ -96,9 +137,14 @@ export default function DeskChat({ snapshot }: { snapshot: () => unknown }) {
     } catch {
       append("analyst unavailable — connection dropped.");
     } finally {
-      setBusy(false);
-      abortRef.current = null;
+      setBusyFor(chatId, false);
+      aborts.current.delete(chatId);
     }
+  };
+
+  const tabTitle = (c: Chat, i: number) => {
+    const first = c.msgs.find((m) => m.role === "user")?.content;
+    return first ? (first.length > 20 ? `${first.slice(0, 20)}…` : first) : `CHAT ${i + 1}`;
   };
 
   return (
@@ -155,8 +201,62 @@ export default function DeskChat({ snapshot }: { snapshot: () => unknown }) {
             </div>
           </header>
 
+          {/* chat tabs */}
+          <div
+            className="flex items-center gap-1 overflow-x-auto border-b px-2 py-1.5"
+            style={{ borderColor: "var(--dk-edge)" }}
+            role="tablist"
+            aria-label="Conversations"
+          >
+            {chats.map((c, i) => {
+              const isActive = c.id === active.id;
+              return (
+                <div
+                  key={c.id}
+                  role="tab"
+                  aria-selected={isActive}
+                  tabIndex={0}
+                  onClick={() => setActiveId(c.id)}
+                  onKeyDown={(e) => e.key === "Enter" && setActiveId(c.id)}
+                  className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-[9.5px] font-semibold tracking-wider"
+                  style={
+                    isActive
+                      ? { borderColor: ACCENT, color: "var(--dk-ink)", background: "var(--dk-panel-2)" }
+                      : { borderColor: "var(--dk-edge)", color: "var(--dk-ink-2)" }
+                  }
+                >
+                  {busyIds.has(c.id) && (
+                    <span className="pulse-dot inline-block h-1.5 w-1.5 rounded-full" style={{ background: ACCENT }} />
+                  )}
+                  <span className="max-w-[120px] truncate">{tabTitle(c, i)}</span>
+                  {chats.length > 1 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeChat(c.id);
+                      }}
+                      aria-label="Close chat"
+                      className="-mr-0.5 rounded px-0.5 text-[11px] leading-none text-[var(--dk-muted)] hover:text-[var(--dk-ink)]"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <button
+              onClick={newChat}
+              aria-label="New chat"
+              title="New chat"
+              className="grid h-6 w-6 shrink-0 place-items-center rounded-md border text-[13px] leading-none text-[var(--dk-ink-2)] hover:text-[var(--dk-ink)]"
+              style={{ borderColor: "var(--dk-edge)" }}
+            >
+              +
+            </button>
+          </div>
+
           <div ref={scrollRef} className="min-h-[180px] flex-1 space-y-3 overflow-y-auto p-3.5">
-            {msgs.length === 0 && (
+            {active.msgs.length === 0 && (
               <div className="space-y-2">
                 <p className="text-[10.5px] leading-relaxed text-[var(--dk-muted)]">
                   Ask about anything on the desk — spot moves, your positions, the forecast,
@@ -175,29 +275,33 @@ export default function DeskChat({ snapshot }: { snapshot: () => unknown }) {
                 ))}
               </div>
             )}
-            {msgs.map((m, i) => (
-              <div key={i} className={m.role === "user" ? "flex justify-end" : "flex flex-col items-start"}>
-                <div
-                  className="max-w-[90%] whitespace-pre-wrap rounded-lg px-2.5 py-1.5 text-[11px] leading-relaxed"
-                  style={
-                    m.role === "user"
-                      ? { background: ACCENT, color: "#fff" }
-                      : { background: "var(--dk-panel-2)", color: "var(--dk-ink)" }
-                  }
-                >
-                  {m.content || (busy && i === msgs.length - 1 ? "…" : "")}
-                </div>
-                {m.role === "assistant" && m.content && !(busy && i === msgs.length - 1) && (
-                  <button
-                    onClick={() => copy(i, m.content)}
-                    className="mt-1 rounded px-1.5 py-0.5 text-[9px] font-semibold tracking-widest text-[var(--dk-muted)] hover:text-[var(--dk-ink)]"
-                    style={copied === i ? { color: "#35c285" } : undefined}
+            {active.msgs.map((m, i) => {
+              const key = `${active.id}:${i}`;
+              const streaming = busy && i === active.msgs.length - 1;
+              return (
+                <div key={key} className={m.role === "user" ? "flex justify-end" : "flex flex-col items-start"}>
+                  <div
+                    className="max-w-[90%] whitespace-pre-wrap rounded-lg px-2.5 py-1.5 text-[11px] leading-relaxed"
+                    style={
+                      m.role === "user"
+                        ? { background: ACCENT, color: "#fff" }
+                        : { background: "var(--dk-panel-2)", color: "var(--dk-ink)" }
+                    }
                   >
-                    {copied === i ? "✓ COPIED" : "COPY"}
-                  </button>
-                )}
-              </div>
-            ))}
+                    {m.content || (streaming ? "…" : "")}
+                  </div>
+                  {m.role === "assistant" && m.content && !streaming && (
+                    <button
+                      onClick={() => copy(key, m.content)}
+                      className="mt-1 rounded px-1.5 py-0.5 text-[9px] font-semibold tracking-widest text-[var(--dk-muted)] hover:text-[var(--dk-ink)]"
+                      style={copied === key ? { color: "#35c285" } : undefined}
+                    >
+                      {copied === key ? "✓ COPIED" : "COPY"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <form
