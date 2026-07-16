@@ -53,3 +53,7 @@ npm run dev
 ```
 
 Open http://localhost:3000. Built with Next.js (App Router), react-globe.gl / three.js, Tailwind v4. Deploys cleanly to Vercel.
+
+## Desk
+
+The `/desk` route hosts Meridian Desk — the wholesale trading view (spot board, forward view, buy-timing analytics, and a tabbed AI analyst drawer powered by `ANTHROPIC_API_KEY`).
