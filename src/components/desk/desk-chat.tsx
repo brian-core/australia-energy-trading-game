@@ -26,14 +26,33 @@ export default function DeskChat({ snapshot }: { snapshot: () => unknown }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const copy = async (idx: number, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(idx);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(null), 1500);
+    } catch {
+      // clipboard blocked (permissions/insecure context) — leave silently
+    }
+  };
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [msgs, open]);
 
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    [],
+  );
 
   const send = async (text: string) => {
     const q = text.trim();
@@ -84,30 +103,32 @@ export default function DeskChat({ snapshot }: { snapshot: () => unknown }) {
 
   return (
     <>
-      {/* floating toggle */}
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-label="Desk analyst chat"
-        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full px-4 py-2.5 text-[11px] font-bold tracking-widest text-white shadow-lg"
-        style={{ background: `linear-gradient(140deg, ${ACCENT}, #8b5cf6)` }}
-      >
-        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z" />
-        </svg>
-        {open ? "CLOSE" : "ANALYST"}
-      </button>
+      {/* floating toggle (hidden while the drawer is open) */}
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          aria-expanded={open}
+          aria-label="Open desk analyst chat"
+          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full px-4 py-2.5 text-[11px] font-bold tracking-widest text-white shadow-lg"
+          style={{ background: `linear-gradient(140deg, ${ACCENT}, #8b5cf6)` }}
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z" />
+          </svg>
+          ANALYST
+        </button>
+      )}
 
-      {/* drawer */}
+      {/* full-height right drawer */}
       {open && (
         <div
-          className="fixed bottom-16 right-2 z-40 flex max-h-[70vh] w-[min(400px,calc(100vw-16px))] flex-col rounded-xl border shadow-2xl"
+          className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l shadow-2xl sm:w-[420px]"
           style={{ borderColor: "var(--dk-edge)", background: "var(--dk-panel)" }}
           role="dialog"
           aria-label="Desk analyst"
         >
           <header
-            className="flex items-center justify-between border-b px-3.5 py-2.5"
+            className="flex items-center justify-between border-b px-3.5 py-3"
             style={{ borderColor: "var(--dk-edge)" }}
           >
             <div>
@@ -116,12 +137,22 @@ export default function DeskChat({ snapshot }: { snapshot: () => unknown }) {
                 AI COMMENTARY · READS YOUR CURRENT SCREEN
               </div>
             </div>
-            <span
-              className="rounded px-1.5 py-0.5 text-[9px] font-bold tracking-widest"
-              style={{ background: "var(--dk-panel-2)", color: ACCENT }}
-            >
-              CLAUDE
-            </span>
+            <div className="flex items-center gap-2">
+              <span
+                className="rounded px-1.5 py-0.5 text-[9px] font-bold tracking-widest"
+                style={{ background: "var(--dk-panel-2)", color: ACCENT }}
+              >
+                CLAUDE
+              </span>
+              <button
+                onClick={() => setOpen(false)}
+                aria-label="Close analyst"
+                className="grid h-7 w-7 place-items-center rounded-lg border text-[13px] text-[var(--dk-ink-2)] hover:text-[var(--dk-ink)]"
+                style={{ borderColor: "var(--dk-edge)" }}
+              >
+                ✕
+              </button>
+            </div>
           </header>
 
           <div ref={scrollRef} className="min-h-[180px] flex-1 space-y-3 overflow-y-auto p-3.5">
@@ -145,9 +176,9 @@ export default function DeskChat({ snapshot }: { snapshot: () => unknown }) {
               </div>
             )}
             {msgs.map((m, i) => (
-              <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+              <div key={i} className={m.role === "user" ? "flex justify-end" : "flex flex-col items-start"}>
                 <div
-                  className="max-w-[85%] whitespace-pre-wrap rounded-lg px-2.5 py-1.5 text-[11px] leading-relaxed"
+                  className="max-w-[90%] whitespace-pre-wrap rounded-lg px-2.5 py-1.5 text-[11px] leading-relaxed"
                   style={
                     m.role === "user"
                       ? { background: ACCENT, color: "#fff" }
@@ -156,6 +187,15 @@ export default function DeskChat({ snapshot }: { snapshot: () => unknown }) {
                 >
                   {m.content || (busy && i === msgs.length - 1 ? "…" : "")}
                 </div>
+                {m.role === "assistant" && m.content && !(busy && i === msgs.length - 1) && (
+                  <button
+                    onClick={() => copy(i, m.content)}
+                    className="mt-1 rounded px-1.5 py-0.5 text-[9px] font-semibold tracking-widest text-[var(--dk-muted)] hover:text-[var(--dk-ink)]"
+                    style={copied === i ? { color: "#35c285" } : undefined}
+                  >
+                    {copied === i ? "✓ COPIED" : "COPY"}
+                  </button>
+                )}
               </div>
             ))}
           </div>
