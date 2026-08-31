@@ -6,6 +6,9 @@ import { PRICE_PER_MW, STARTING_CASH, type GameState, type OwnedAsset } from "./
 // The game itself is a client-side simulation — there is no per-action
 // server ledger — so this doesn't replay history. Instead it bounds what a
 // *final* state could physically be, using facts the client can't fake:
+//   - any state with cheatsUsed set is rejected outright (the client is
+//     supposed to stop syncing once a cheat code is used, see
+//     applyCheatCode in game.ts — this is the backstop if it doesn't)
 //   - each asset's price must match the fixed PRICE_PER_MW catalog for its
 //     declared capacity (catches fabricated assets)
 //   - total fleet capacity can't exceed the physical grid (catches a fleet
@@ -37,6 +40,10 @@ function isFiniteNumber(v: unknown): v is number {
 export function validateGameState(raw: unknown, now: number, accountCreatedAtMs: number): ValidationResult {
   if (typeof raw !== "object" || raw === null) return { ok: false, error: "state must be an object" };
   const s = raw as Partial<GameState>;
+
+  if (s.cheatsUsed === true) {
+    return { ok: false, error: "cheats are active in this game — cloud save & leaderboard are disabled for it" };
+  }
 
   if (!isFiniteNumber(s.cash)) return { ok: false, error: "invalid cash" };
   if (s.cash < MIN_CASH) return { ok: false, error: "cash below plausible floor" };

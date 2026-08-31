@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CF_BY_FUEL,
+  CHEATS,
   TASKS_BY_FUEL,
   assetOutputMW,
   buyPrice,
@@ -33,6 +34,32 @@ function condColor(v: number): string {
   return "#e2483d";
 }
 
+const CHEAT_CODES = Object.keys(CHEATS);
+const CHEAT_BUFFER_LEN = Math.max(...CHEAT_CODES.map((c) => c.length));
+
+/** GTA-style typed cheat codes: type a code (see CHEATS in game.ts) anywhere
+ *  in OPS, outside a text field, to trigger it. Not a hidden backdoor — it's
+ *  an Easter egg the player has to know or discover, and using one flips
+ *  GameState.cheatsUsed so cloud save/leaderboard turn off for that game. */
+function useCheatListener(onMatch: (code: string) => void) {
+  const bufferRef = useRef("");
+  useEffect(() => {
+    function handleKeydown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+      if (e.key.length !== 1 || !/[a-zA-Z]/.test(e.key)) return;
+      bufferRef.current = (bufferRef.current + e.key.toUpperCase()).slice(-CHEAT_BUFFER_LEN);
+      const hit = CHEAT_CODES.find((c) => bufferRef.current.endsWith(c));
+      if (hit) {
+        bufferRef.current = "";
+        onMatch(hit);
+      }
+    }
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  }, [onMatch]);
+}
+
 export default function OpsPanel({
   game,
   live,
@@ -46,8 +73,9 @@ export default function OpsPanel({
   onFocusAsset: (lat: number, lng: number) => void;
   onEnterSite: (facility: Facility) => void;
 }) {
-  const { state, buy, sell, maintain, reset, now } = game;
+  const { state, buy, sell, maintain, applyCheat, reset, now } = game;
   const [marketOpen, setMarketOpen] = useState(state.fleet.length === 0);
+  useCheatListener(useCallback((code: string) => applyCheat(code), [applyCheat]));
 
   const spotByRegion = useMemo(
     () => new Map(live.regions.map((r) => [r.code, r.priceAUD])),

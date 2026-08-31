@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  applyCheatCode,
   buyAsset,
   loadGame,
   newGame,
@@ -21,6 +22,8 @@ export interface GameApi {
   buy: (facility: Facility) => void;
   sell: (assetId: string) => void;
   maintain: (assetId: string, taskId: string) => void;
+  /** Applies a cheat code by name (case-insensitive); no-op if unrecognised. */
+  applyCheat: (code: string) => void;
   reset: () => void;
   now: number;
 }
@@ -36,6 +39,8 @@ export function useEnergyGame(live: LivePayload | null, enabled: boolean): GameA
   }, [state]);
 
   // Cloud sync: on sign-in adopt the newer save; push the latest every 30s.
+  // Skipped entirely once a cheat code has been used this game — see
+  // applyCheatCode in game.ts.
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
@@ -44,11 +49,13 @@ export function useEnergyGame(live: LivePayload | null, enabled: boolean): GameA
         setState(remote);
       }
     });
-    const push = setInterval(() => void saveCloudSave(stateRef.current), 30_000);
+    const push = setInterval(() => {
+      if (!stateRef.current.cheatsUsed) void saveCloudSave(stateRef.current);
+    }, 30_000);
     return () => {
       cancelled = true;
       clearInterval(push);
-      void saveCloudSave(stateRef.current);
+      if (!stateRef.current.cheatsUsed) void saveCloudSave(stateRef.current);
     };
   }, [session]);
 
@@ -84,9 +91,12 @@ export function useEnergyGame(live: LivePayload | null, enabled: boolean): GameA
   const maintain = useCallback((assetId: string, taskId: string) => {
     setState((s) => startMaintenance(s, assetId, taskId, Date.now()));
   }, []);
+  const applyCheat = useCallback((code: string) => {
+    setState((s) => applyCheatCode(s, code, Date.now()) ?? s);
+  }, []);
   const reset = useCallback(() => {
     setState(newGame());
   }, []);
 
-  return { state, buy, sell, maintain, reset, now };
+  return { state, buy, sell, maintain, applyCheat, reset, now };
 }

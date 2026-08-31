@@ -36,9 +36,10 @@ export default function AccountCard({ game }: { game: GameApi }) {
   // Publish score + refresh the board once a minute while signed in. Saves
   // the latest local state first so the server-computed score (see
   // src/app/api/game/leaderboard) reflects current play, not a stale cloud
-  // save from up to 30s ago.
+  // save from up to 30s ago. Skipped entirely once a cheat code has been
+  // used this game (game.state.cheatsUsed) — cheats stay local-only fun.
   useEffect(() => {
-    if (!session) return;
+    if (!session || game.state.cheatsUsed) return;
     const tick = () => {
       const name = window.localStorage.getItem(HANDLE_KEY) ?? "anon";
       void saveCloudSave(game.state)
@@ -49,7 +50,7 @@ export default function AccountCard({ game }: { game: GameApi }) {
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+  }, [session, game.state.cheatsUsed]);
 
   if (!cloudEnabled()) return null;
 
@@ -91,25 +92,34 @@ export default function AccountCard({ game }: { game: GameApi }) {
       ) : (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-[11px] text-[var(--ink-soft)]">
-            <span className="truncate">{session.user.email} · saving to cloud ✓</span>
+            <span className="truncate">
+              {session.user.email} · {game.state.cheatsUsed ? "cheats active — cloud off" : "saving to cloud ✓"}
+            </span>
             <button onClick={() => void signOut()} className="hover:text-[#e2483d]">
               SIGN OUT
             </button>
           </div>
-          <div className="flex items-center gap-1.5 text-[11px]">
-            <span className="text-[var(--ink-soft)]">leaderboard name</span>
-            <input
-              value={handle}
-              maxLength={24}
-              onChange={(e) => {
-                setHandle(e.target.value);
-                window.localStorage.setItem(HANDLE_KEY, e.target.value);
-              }}
-              className="flex-1 rounded border bg-black/30 px-1.5 py-0.5"
-              style={{ borderColor: "var(--edge)" }}
-            />
-          </div>
-          {board.length > 0 && (
+          {game.state.cheatsUsed ? (
+            <div className="text-[10px] leading-snug text-[var(--ink-soft)]">
+              This game used a cheat code, so it won&apos;t sync to the cloud or the leaderboard.
+              Local play carries on as normal — start NEW GAME to re-enable cloud save.
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <span className="text-[var(--ink-soft)]">leaderboard name</span>
+              <input
+                value={handle}
+                maxLength={24}
+                onChange={(e) => {
+                  setHandle(e.target.value);
+                  window.localStorage.setItem(HANDLE_KEY, e.target.value);
+                }}
+                className="flex-1 rounded border bg-black/30 px-1.5 py-0.5"
+                style={{ borderColor: "var(--edge)" }}
+              />
+            </div>
+          )}
+          {!game.state.cheatsUsed && board.length > 0 && (
             <div className="space-y-0.5 border-t pt-1.5" style={{ borderColor: "var(--edge)" }}>
               {board.map((row, i) => (
                 <div

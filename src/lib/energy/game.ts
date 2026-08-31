@@ -100,6 +100,11 @@ export interface GameState {
   log: Array<{ at: number; msg: string; warn?: boolean }>;
   lastTick: number;
   startedAt: number;
+  /** Set permanently once a cheat code has been used this game (see
+   *  applyCheatCode). A cheated game keeps playing locally but is excluded
+   *  from cloud save and the leaderboard — same trade GTA makes between
+   *  single-player cheats and the online economy. */
+  cheatsUsed: boolean;
 }
 
 export const STARTING_CASH = 500_000_000;
@@ -113,6 +118,7 @@ export function newGame(): GameState {
     log: [{ at: now, msg: "Company founded with $500m. Buy assets in the MARKET, keep them maintained, earn the live spot price." }],
     lastTick: now,
     startedAt: now,
+    cheatsUsed: false,
   };
 }
 
@@ -123,7 +129,7 @@ export function loadGame(): GameState {
     if (!raw) return newGame();
     const parsed = JSON.parse(raw) as GameState;
     if (typeof parsed.cash !== "number" || !Array.isArray(parsed.fleet)) return newGame();
-    return parsed;
+    return { ...parsed, cheatsUsed: parsed.cheatsUsed === true };
   } catch {
     return newGame();
   }
@@ -286,4 +292,54 @@ export function startMaintenance(state: GameState, assetId: string, taskId: stri
 /** Fleet book value + cash = score. */
 export function companyValue(state: GameState): number {
   return state.cash + state.fleet.reduce((s, a) => s + a.paidAUD * 0.7, 0);
+}
+
+// Cheat codes — an Easter egg, not a hidden backdoor. Type one anywhere in
+// OPS (not while a text field is focused) to trigger it. Using any of them
+// flips cheatsUsed permanently for this game: local play carries on exactly
+// as normal, but cloud save and the leaderboard are switched off for it (see
+// use-game.ts / account-card.tsx), and the server independently refuses to
+// store a cheated state even if a client tried to push one anyway (see
+// src/lib/energy/validate.ts). Same split GTA makes between single-player
+// cheat codes and GTA Online.
+export const CHEATS: Record<string, { label: string }> = {
+  BLACKGOLD: { label: "BLACKGOLD — +$500m cash" },
+  FULLCHARGE: { label: "FULLCHARGE — fleet restored to 100%, jobs cleared" },
+  MELTDOWN: { label: "MELTDOWN — for dramatic effect only" },
+};
+
+export type CheatCode = keyof typeof CHEATS;
+
+/** Applies a cheat code (case-insensitive). Returns the next state, or null
+ *  if `code` doesn't match anything. */
+export function applyCheatCode(state: GameState, code: string, now: number): GameState | null {
+  const key = code.toUpperCase();
+  if (!(key in CHEATS)) return null;
+
+  let next: GameState = { ...state, cheatsUsed: true };
+
+  if (key === "BLACKGOLD") {
+    next = { ...next, cash: next.cash + 500_000_000 };
+  } else if (key === "FULLCHARGE") {
+    next = {
+      ...next,
+      fleet: next.fleet.map((a) => ({
+        ...a,
+        job: null,
+        conditions: Object.fromEntries(Object.keys(a.conditions).map((id) => [id, 100])),
+      })),
+    };
+  }
+
+  return {
+    ...next,
+    log: [
+      ...next.log,
+      {
+        at: now,
+        warn: true,
+        msg: `CHEAT ACTIVATED — ${CHEATS[key].label}. Cloud save & leaderboard are now off for this game (NEW GAME re-enables them).`,
+      },
+    ].slice(-60),
+  };
 }
