@@ -55,13 +55,29 @@ export async function loadCloudSave(): Promise<GameState | null> {
   return (data?.state as GameState) ?? null;
 }
 
+/** Bearer header for the caller's current Supabase session, or null if signed out. */
+async function authHeader(sb: SupabaseClient): Promise<Record<string, string> | null> {
+  const { data } = await sb.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : null;
+}
+
+// Writes go through server API routes rather than straight to Supabase with
+// the anon key: the server recomputes and bounds-checks the state (and, for
+// the leaderboard, the score itself) before writing with the service-role
+// key, instead of trusting whatever numbers the client computed. See
+// src/app/api/game/save and src/app/api/game/leaderboard.
+
 export async function saveCloudSave(state: GameState): Promise<void> {
   const sb = getSupabase();
-  const user = (await sb?.auth.getUser())?.data.user;
-  if (!sb || !user) return;
-  await sb
-    .from("game_saves")
-    .upsert({ user_id: user.id, state, updated_at: new Date().toISOString() });
+  if (!sb) return;
+  const headers = await authHeader(sb);
+  if (!headers) return;
+  await fetch("/api/game/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify({ state }),
+  }).catch(() => {});
 }
 
 export interface LeaderboardRow {
@@ -70,16 +86,18 @@ export interface LeaderboardRow {
   user_id: string;
 }
 
-export async function pushLeaderboard(handle: string, companyValue: number): Promise<void> {
+/** Publishes the caller's current cloud-saved score under `handle`. Call
+ *  saveCloudSave first if the score should reflect the latest local play. */
+export async function pushLeaderboard(handle: string): Promise<void> {
   const sb = getSupabase();
-  const user = (await sb?.auth.getUser())?.data.user;
-  if (!sb || !user) return;
-  await sb.from("leaderboard").upsert({
-    user_id: user.id,
-    handle: handle.slice(0, 24) || "anon",
-    company_value: Math.round(companyValue),
-    updated_at: new Date().toISOString(),
-  });
+  if (!sb) return;
+  const headers = await authHeader(sb);
+  if (!headers) return;
+  await fetch("/api/game/leaderboard", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify({ handle }),
+  }).catch(() => {});
 }
 
 export async function fetchLeaderboard(limit = 10): Promise<LeaderboardRow[]> {

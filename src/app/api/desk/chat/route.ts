@@ -1,17 +1,31 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { clientIp, isRateLimited } from "@/lib/rate-limit";
 
 // AI desk analyst: streams Claude commentary on the caller's current desk
 // state. The client sends its chat history plus a compact JSON snapshot of
 // what the desk is showing (spot, positions, P&L, alerts, forecast); the
 // snapshot rides only on the latest turn so history stays lean. Env-gated on
 // ANTHROPIC_API_KEY — without it the route answers 503 and the UI explains.
+//
+// This route pays real API cost per request and has no login wall (by
+// design — the analyst is usable without an account), so it's rate-limited
+// instead: a tight per-IP window plus a loose global window that bounds
+// worst-case spend even under a distributed script. Both are in-memory
+// (see src/lib/rate-limit.ts) — good enough to stop casual abuse, not a
+// substitute for an authenticated quota if this gets hammered for real.
 
 export const maxDuration = 60; // allow long streamed answers on Vercel
+export const runtime = "nodejs";
 
 const MODEL = "claude-opus-4-8";
 const MAX_TURNS = 24;
 const MAX_CONTENT_CHARS = 4_000;
 const MAX_CONTEXT_CHARS = 24_000;
+
+const IP_LIMIT = 8;
+const IP_WINDOW_MS = 10 * 60 * 1000; // 8 requests / 10 min / IP
+const GLOBAL_LIMIT = 300;
+const GLOBAL_WINDOW_MS = 60 * 60 * 1000; // 300 requests / hour, all callers combined
 
 const SYSTEM = `You are the desk analyst on "Meridian Desk", a wholesale electricity trading desk covering Australia's NEM (QLD/NSW/VIC/SA/TAS) and WEM (WA). You sit next to the trader and provide sharp, quantitative commentary on what the desk is showing.
 
@@ -38,6 +52,14 @@ export async function POST(request: Request) {
       503,
       "AI analyst not configured — set ANTHROPIC_API_KEY in the deployment environment.",
     );
+  }
+
+  if (isRateLimited(`global`, GLOBAL_LIMIT, GLOBAL_WINDOW_MS)) {
+    return bad(429, "analyst is busy — try again shortly");
+  }
+  const ip = clientIp(request);
+  if (isRateLimited(`ip:${ip}`, IP_LIMIT, IP_WINDOW_MS)) {
+    return bad(429, "too many requests from this connection — slow down and try again in a few minutes");
   }
 
   let body: { messages?: ChatTurn[]; context?: unknown };

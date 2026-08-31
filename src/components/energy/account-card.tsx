@@ -8,12 +8,12 @@ import {
   cloudEnabled,
   fetchLeaderboard,
   pushLeaderboard,
+  saveCloudSave,
   signInWithEmail,
   signOut,
   useSession,
   type LeaderboardRow,
 } from "@/lib/cloud";
-import { companyValue } from "@/lib/energy/game";
 import type { GameApi } from "./use-game";
 
 const HANDLE_KEY = "au-energy-handle";
@@ -33,14 +33,17 @@ export default function AccountCard({ game }: { game: GameApi }) {
   );
   const [board, setBoard] = useState<LeaderboardRow[]>([]);
 
-  // Publish score + refresh the board once a minute while signed in.
+  // Publish score + refresh the board once a minute while signed in. Saves
+  // the latest local state first so the server-computed score (see
+  // src/app/api/game/leaderboard) reflects current play, not a stale cloud
+  // save from up to 30s ago.
   useEffect(() => {
     if (!session) return;
     const tick = () => {
       const name = window.localStorage.getItem(HANDLE_KEY) ?? "anon";
-      void pushLeaderboard(name, companyValue(game.state)).then(() =>
-        fetchLeaderboard().then(setBoard),
-      );
+      void saveCloudSave(game.state)
+        .then(() => pushLeaderboard(name))
+        .then(() => fetchLeaderboard().then(setBoard));
     };
     tick();
     const id = setInterval(tick, 60_000);

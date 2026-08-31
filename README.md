@@ -39,11 +39,12 @@ Not covered: the NT's Darwin–Katherine grid and regional WA systems (no public
 
 1. **Push to GitHub** — create an empty repo, then `git remote add origin <url> && git push -u origin main`.
 2. **Vercel** — import the repo at vercel.com; no config needed. Add a custom domain under Settings → Domains.
-3. **Accounts (optional)** — create a free [Supabase](https://supabase.com) project, run `supabase/schema.sql` in the SQL editor, set the project's **Auth → URL Configuration → Site URL** to your deployed URL, and add two env vars in Vercel (then redeploy):
+3. **Accounts (optional)** — create a free [Supabase](https://supabase.com) project, run `supabase/schema.sql` in the SQL editor, set the project's **Auth → URL Configuration → Site URL** to your deployed URL, and add three env vars in Vercel (then redeploy):
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY` — server-only (never exposed to the browser). Cloud saves and leaderboard writes go through `/api/game/save` and `/api/game/leaderboard`, which validate the submitted state server-side before writing with this key — the browser can only read its own save and the public leaderboard, not write either table directly. Without this var, sign-up/sign-in still works but cloud save and the leaderboard return "not configured".
 
-   This enables passwordless email sign-up, cross-device cloud saves, and the public leaderboard (the ACCOUNT card appears in OPS automatically). Without these vars the game runs identically with browser-local saves.
+   This enables passwordless email sign-up, cross-device cloud saves, and the public leaderboard (the ACCOUNT card appears in OPS automatically). Without any of these vars the game runs identically with browser-local saves. If you deployed an earlier version of this schema, re-run `supabase/schema.sql` — it now revokes the direct client write access those earlier policies granted.
 
 ## Run it
 
